@@ -1,0 +1,6 @@
+{"title": "Remote Apply tracker", "extra_css_urls": ["/static/dark.css"],
+ "databases": {"applications": {"queries": {
+   "applied": {"sql": "select applied_at, company, title, hq, salary, fit, ghost, url from jobs where status in ('applied','interview','offer','rejected') order by applied_at desc"},
+   "tonight": {"sql": "select company, title, value, fit, ghost, ghost_why, status, url from jobs where status in ('staged','new','ready','needs_you') and fit >= 66 order by value desc limit 50"},
+   "layoffs_at_target_companies": {"sql": "select company, warn_count, warn_employees, warn_last, perm_cases, surge_note from company_signals order by warn_employees desc"}
+ }}}}

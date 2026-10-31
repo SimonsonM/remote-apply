@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#11151a">
+  <title>Remote Apply · Command center</title>
+  <meta name="description" content="A local overview of your job search and applications that need your attention.">
+  <script>try{document.documentElement.dataset.theme=localStorage.getItem('ra-theme')==='light'?'light':'dark'}catch(_){}</script>
+  <link rel="stylesheet" href="/dashboard.css">
+  <script src="/dashboard.js" defer></script>
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar" aria-label="Primary navigation">
+      <a class="brand" href="#overview" aria-label="Remote Apply overview"><span class="brand-mark">R<span class="brand-dot">·</span></span><span><strong>Remote Apply</strong><small>COMMAND CENTER</small></span></a>
+      <div class="sidebar-group-label">WORKSPACE</div>
+      <nav class="nav-list">
+        <a class="nav-link active" href="#overview"><span class="nav-icon" aria-hidden="true">◫</span> Overview</a>
+        <a class="nav-link" href="#action-queue"><span class="nav-icon" aria-hidden="true">◎</span> Action queue <span class="nav-count" id="sideActionCount">—</span></a>
+        <a class="nav-link" href="#activity"><span class="nav-icon" aria-hidden="true">▥</span> Activity</a>
+      </nav>
+      <div class="sidebar-bottom"><div class="privacy"><span class="privacy-icon">⌁</span><span><strong>Local workspace</strong><small>Read only · Your data stays here</small></span></div><div class="side-foot">REMOTE APPLY / 2026</div></div>
+    </aside>
+
+    <main id="overview" class="main">
+      <header class="topbar">
+        <div class="breadcrumb"><span>Workspace</span><span class="slash">/</span><strong>Overview</strong></div>
+        <div class="top-actions"><span class="live-pill"><span class="live-dot"></span> Live database</span><button id="themeToggle" class="icon-button" type="button" aria-label="Switch to light mode" title="Toggle color mode"><span id="themeIcon" aria-hidden="true">☼</span></button></div>
+      </header>
+
+      <div class="content">
+        <div class="page-heading"><div><p class="eyebrow">YOUR JOB SEARCH, AT A GLANCE</p><h1><span id="greeting">Welcome back</span><span id="firstName"></span><span class="heading-period">.</span></h1><p class="lead">A clear view of your progress and what needs your attention next.</p></div><button class="refresh-button" id="refreshButton" type="button"><span aria-hidden="true">↻</span> Refresh data</button></div>
+        <div class="status-strip"><span class="status-led"></span><span id="dataStatus">Loading your application data…</span><span class="status-time" id="updatedTime"></span></div>
+
+        <section class="metrics" aria-label="Key statistics">
+          <article class="metric-card metric-feature"><div class="metric-top"><span>Needs your action</span><span class="metric-glyph">↗</span></div><div class="metric-value" id="metricAction">—</div><div class="metric-foot"><span class="mini-accent">NEXT UP</span><span>Applications waiting on you</span></div></article>
+          <article class="metric-card"><div class="metric-top"><span>Currently applied</span><span class="metric-glyph">✦</span></div><div class="metric-value" id="metricApplied">—</div><div class="metric-foot">Confirmed applications</div></article>
+          <article class="metric-card"><div class="metric-top"><span>In conversation</span><span class="metric-glyph">↗</span></div><div class="metric-value" id="metricInterviews">—</div><div class="metric-foot">Interview and offer stages</div></article>
+          <article class="metric-card"><div class="metric-top"><span>Jobs tracked</span><span class="metric-glyph">▤</span></div><div class="metric-value" id="metricTracked">—</div><div class="metric-foot">Across every status</div></article>
+        </section>
+
+        <section id="activity" class="insights-grid" aria-label="Visual statistics">
+          <article class="panel activity-panel"><div class="panel-heading"><div><p class="panel-kicker">MOMENTUM</p><h2>Application activity</h2><p>Apply dates recorded over the last 14 days</p></div><span class="panel-pill">14 DAYS</span></div><div class="activity-chart" id="activityChart" role="img" aria-label="Application dates recorded by day"></div><div class="chart-axis"><span id="activityStart">—</span><span id="activityEnd">Today</span></div></article>
+          <article class="panel pipeline-panel"><div class="panel-heading"><div><p class="panel-kicker">PIPELINE</p><h2>Where things stand</h2><p>Applications and leads in motion</p></div></div><div class="pipeline-layout"><div class="donut" id="pipelineDonut" role="img" aria-label="Active job status distribution"><div class="donut-center"><strong id="donutTotal">—</strong><span>active jobs</span></div></div><div class="pipeline-legend" id="pipelineLegend"></div></div></article>
+        </section>
+
+        <section id="action-queue" class="queue-section" aria-labelledby="queueTitle"><div class="queue-heading"><div><p class="panel-kicker">YOUR NEXT MOVES</p><h2 id="queueTitle">Action queue <span id="queueCount" class="queue-title-count">—</span></h2><p>Open a listing, finish the remaining step, then record the outcome in Remote Apply.</p></div><div class="queue-heading-icon" aria-hidden="true">↗</div></div>
+          <div class="queue-toolbar"><div class="filters" id="filters" role="group" aria-label="Filter jobs by status"><button type="button" data-filter="all" class="filter active">All <span id="filterAllCount">—</span></button><button type="button" data-filter="staged" class="filter">Ready to submit <span id="filterStagedCount">—</span></button><button type="button" data-filter="captcha" class="filter">CAPTCHA <span id="filterCaptchaCount">—</span></button><button type="button" data-filter="needs_you" class="filter">Needs you <span id="filterNeedsCount">—</span></button><button type="button" data-filter="unconfirmed" class="filter">Verify <span id="filterUnconfirmedCount">—</span></button><button type="button" data-filter="manual" class="filter">Manual <span id="filterManualCount">—</span></button></div><label class="search-field"><span aria-hidden="true">⌕</span><span class="sr-only">Search jobs</span><input id="searchInput" type="search" placeholder="Search company or role" autocomplete="off"></label></div>
+          <div class="queue-meta"><span id="resultsText">Loading jobs…</span><span>Sorted by stage, then fit</span></div>
+          <div class="job-list" id="jobList" aria-live="polite"></div>
+          <button class="load-more" id="loadMoreButton" type="button" hidden>Show more jobs ↓</button>
+          <div class="empty-state" id="emptyState" hidden><div class="empty-icon">◎</div><h3>No jobs match this view</h3><p>Try a different status or search term.</p></div>
+          <div class="queue-footer"><span>Showing live data from <strong>applications.sqlite3</strong></span><button class="text-button" id="backToTop" type="button">Back to top ↑</button></div>
+        </section>
+        <footer class="main-footer"><span>Remote Apply · Your local command center</span><span>Read only dashboard · Application links open in a new tab</span></footer>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

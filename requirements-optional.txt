@@ -1,0 +1,4 @@
+# Optional voice and research features; not installed by install.sh.
+kokoro
+soundfile
+knowledge-storm

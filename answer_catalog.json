@@ -1,0 +1,342 @@
+{
+  "questions": [
+    {
+      "key": "city",
+      "prompt": "What city do you live in?",
+      "category": "profile_fact",
+      "match": "\\bcity\\b",
+      "answer_type": "text",
+      "help": "Employers use this to contact you or check location eligibility.",
+      "derive_from": "city"
+    },
+    {
+      "key": "state",
+      "prompt": "What state or province do you live in?",
+      "category": "profile_fact",
+      "match": "\\bstate\\b|province",
+      "answer_type": "text",
+      "help": "Employers use this to contact you or check location eligibility.",
+      "derive_from": "state"
+    },
+    {
+      "key": "zip",
+      "prompt": "What is your ZIP or postal code?",
+      "category": "profile_fact",
+      "match": "zip|postal code",
+      "answer_type": "text",
+      "help": "Employers use this to contact you or check location eligibility.",
+      "derive_from": "zip"
+    },
+    {
+      "key": "location",
+      "prompt": "What is your current location?",
+      "category": "profile_fact",
+      "match": "current location|where.*located",
+      "answer_type": "text",
+      "help": "Employers use this to contact you or check location eligibility.",
+      "derive_from": "location"
+    },
+    {
+      "key": "timezone",
+      "prompt": "What is your time zone?",
+      "category": "profile_fact",
+      "match": "time ?zone",
+      "answer_type": "text",
+      "help": "Employers use this to contact you or check location eligibility.",
+      "derive_from": "timezone"
+    },
+    {
+      "key": "linkedin",
+      "prompt": "What is your LinkedIn URL?",
+      "category": "profile_fact",
+      "match": "linkedin",
+      "answer_type": "text",
+      "help": "Employers use this to contact you or check location eligibility.",
+      "derive_from": "linkedin"
+    },
+    {
+      "key": "github",
+      "prompt": "What is your GitHub URL?",
+      "category": "profile_fact",
+      "match": "github",
+      "answer_type": "text",
+      "help": "Employers use this to contact you or check location eligibility.",
+      "derive_from": "github"
+    },
+    {
+      "key": "website",
+      "prompt": "What is your personal website?",
+      "category": "profile_fact",
+      "match": "personal website|portfolio URL",
+      "answer_type": "text",
+      "help": "Employers use this to contact you or check location eligibility.",
+      "derive_from": "website"
+    },
+    {
+      "key": "portfolio",
+      "prompt": "What is your portfolio URL?",
+      "category": "profile_fact",
+      "match": "portfolio",
+      "answer_type": "text",
+      "help": "Employers use this to contact you or check location eligibility.",
+      "derive_from": "website"
+    },
+    {
+      "key": "work_authorized",
+      "prompt": "Are you legally authorized to work in this country?",
+      "category": "attestation",
+      "match": "authori[sz]ed to work|legally.*work",
+      "answer_type": "yes_no",
+      "help": "This is a factual or legal declaration; verify it before sending."
+    },
+    {
+      "key": "sponsorship_now",
+      "prompt": "Do you need visa sponsorship now?",
+      "category": "attestation",
+      "match": "sponsorship.*now|sponsor.*now",
+      "answer_type": "yes_no",
+      "help": "This is a factual or legal declaration; verify it before sending."
+    },
+    {
+      "key": "sponsorship_future",
+      "prompt": "Will you need sponsorship in the future?",
+      "category": "attestation",
+      "match": "sponsor.*future|future.*sponsor",
+      "answer_type": "yes_no",
+      "help": "This is a factual or legal declaration; verify it before sending."
+    },
+    {
+      "key": "age_18",
+      "prompt": "Are you at least 18 years old?",
+      "category": "attestation",
+      "match": "18 years|18 or older|age of 18",
+      "answer_type": "yes_no",
+      "help": "This is a factual or legal declaration; verify it before sending."
+    },
+    {
+      "key": "relocate",
+      "prompt": "Are you willing to relocate?",
+      "category": "attestation",
+      "match": "relocat",
+      "answer_type": "yes_no",
+      "help": "This is a factual or legal declaration; verify it before sending."
+    },
+    {
+      "key": "remote",
+      "prompt": "Are you willing to work remotely?",
+      "category": "other",
+      "match": "work remote|remote work",
+      "answer_type": "yes_no",
+      "help": "This helps the employer assess availability and work preferences."
+    },
+    {
+      "key": "hybrid",
+      "prompt": "Are you willing to work a hybrid schedule?",
+      "category": "other",
+      "match": "hybrid schedule|hybrid work",
+      "answer_type": "yes_no",
+      "help": "This helps the employer assess availability and work preferences."
+    },
+    {
+      "key": "travel",
+      "prompt": "Are you willing to travel for work?",
+      "category": "other",
+      "match": "willing to travel|travel required",
+      "answer_type": "yes_no",
+      "help": "This helps the employer assess availability and work preferences."
+    },
+    {
+      "key": "start_date",
+      "prompt": "When can you start?",
+      "category": "other",
+      "match": "start date|available to start",
+      "answer_type": "text",
+      "help": "This helps the employer assess availability and work preferences.",
+      "derive_from": "start_date"
+    },
+    {
+      "key": "notice",
+      "prompt": "How much notice do you need?",
+      "category": "other",
+      "match": "notice period|weeks.*notice",
+      "answer_type": "text",
+      "help": "This helps the employer assess availability and work preferences."
+    },
+    {
+      "key": "heard",
+      "prompt": "How did you hear about this job?",
+      "category": "other",
+      "match": "how did you hear|source of.*application",
+      "answer_type": "text",
+      "help": "This helps the employer assess availability and work preferences."
+    },
+    {
+      "key": "previous_employee",
+      "prompt": "Have you previously worked for this employer?",
+      "category": "attestation",
+      "match": "previously employed|worked for us before",
+      "answer_type": "yes_no",
+      "help": "This is a factual or legal declaration; verify it before sending."
+    },
+    {
+      "key": "related_employee",
+      "prompt": "Are you related to an employee?",
+      "category": "attestation",
+      "match": "related to.*employee|family member.*employee",
+      "answer_type": "yes_no",
+      "help": "This is a factual or legal declaration; verify it before sending."
+    },
+    {
+      "key": "non_compete",
+      "prompt": "Are you bound by a non-compete?",
+      "category": "attestation",
+      "match": "non[ -]?compete|restrictive covenant",
+      "answer_type": "yes_no",
+      "help": "This is a factual or legal declaration; verify it before sending."
+    },
+    {
+      "key": "government_official",
+      "prompt": "Are you or a relative a government official?",
+      "category": "attestation",
+      "match": "government official",
+      "answer_type": "yes_no",
+      "help": "This is a factual or legal declaration; verify it before sending."
+    },
+    {
+      "key": "sanctions",
+      "prompt": "Are you subject to sanctions?",
+      "category": "attestation",
+      "match": "sanction",
+      "answer_type": "yes_no",
+      "help": "This is a factual or legal declaration; verify it before sending."
+    },
+    {
+      "key": "clearance",
+      "prompt": "Do you hold a security clearance?",
+      "category": "attestation",
+      "match": "security clearance",
+      "answer_type": "choice",
+      "help": "This is a factual or legal declaration; verify it before sending."
+    },
+    {
+      "key": "criminal",
+      "prompt": "Have you been convicted of a crime?",
+      "category": "attestation",
+      "match": "convict|criminal history",
+      "answer_type": "yes_no",
+      "help": "This is a factual or legal declaration; verify it before sending."
+    },
+    {
+      "key": "background",
+      "prompt": "Will you consent to a background check?",
+      "category": "consent",
+      "match": "background check",
+      "answer_type": "yes_no",
+      "help": "This controls permission to process your application or run a check."
+    },
+    {
+      "key": "privacy",
+      "prompt": "Do you agree to the privacy notice?",
+      "category": "consent",
+      "match": "privacy policy|privacy notice",
+      "answer_type": "sentinel",
+      "help": "This controls permission to process your application or run a check."
+    },
+    {
+      "key": "data_processing",
+      "prompt": "Do you consent to processing your data?",
+      "category": "consent",
+      "match": "data processing|process.*personal data",
+      "answer_type": "sentinel",
+      "help": "This controls permission to process your application or run a check."
+    },
+    {
+      "key": "terms",
+      "prompt": "Do you agree to the application terms?",
+      "category": "consent",
+      "match": "agree.*terms|application terms",
+      "answer_type": "sentinel",
+      "help": "This controls permission to process your application or run a check."
+    },
+    {
+      "key": "attest",
+      "prompt": "Do you certify your application is accurate?",
+      "category": "attestation",
+      "match": "certify.*accurate|attest.*true",
+      "answer_type": "sentinel",
+      "help": "This is a factual or legal declaration; verify it before sending."
+    },
+    {
+      "key": "gender",
+      "prompt": "How do you describe your gender?",
+      "category": "eeo",
+      "match": "\\bgender\\b",
+      "answer_type": "choice",
+      "help": "This optional information is used for equal opportunity reporting."
+    },
+    {
+      "key": "race",
+      "prompt": "How do you describe your race or ethnicity?",
+      "category": "eeo",
+      "match": "race|ethnic",
+      "answer_type": "choice",
+      "help": "This optional information is used for equal opportunity reporting."
+    },
+    {
+      "key": "veteran",
+      "prompt": "What is your veteran status?",
+      "category": "eeo",
+      "match": "veteran status",
+      "answer_type": "choice",
+      "help": "This optional information is used for equal opportunity reporting."
+    },
+    {
+      "key": "disability",
+      "prompt": "What is your disability status?",
+      "category": "eeo",
+      "match": "disabilit",
+      "answer_type": "choice",
+      "help": "This optional information is used for equal opportunity reporting."
+    },
+    {
+      "key": "pronouns",
+      "prompt": "What pronouns do you use?",
+      "category": "eeo",
+      "match": "pronouns?",
+      "answer_type": "choice",
+      "help": "This optional information is used for equal opportunity reporting."
+    },
+    {
+      "key": "salary_expectation",
+      "prompt": "What are your salary expectations?",
+      "category": "salary",
+      "match": "salary expectation|desired salary",
+      "answer_type": "text",
+      "help": "This may affect compensation screening and should reflect your current preference."
+    },
+    {
+      "key": "salary_range",
+      "prompt": "What compensation range do you seek?",
+      "category": "salary",
+      "match": "compensation range|desired compensation",
+      "answer_type": "text",
+      "help": "This may affect compensation screening and should reflect your current preference."
+    },
+    {
+      "key": "hourly_rate",
+      "prompt": "What hourly rate do you expect?",
+      "category": "salary",
+      "match": "hourly rate|desired pay",
+      "answer_type": "text",
+      "help": "This may affect compensation screening and should reflect your current preference."
+    },
+    {
+      "key": "other_links",
+      "prompt": "Do you have other professional links?",
+      "category": "profile_fact",
+      "match": "other.*links|additional.*website",
+      "answer_type": "text",
+      "help": "Employers use this to contact you or check location eligibility."
+    }
+  ]
+}

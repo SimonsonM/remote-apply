@@ -1,0 +1,83 @@
+{
+  "name": "Jane Doe",
+  "email": "",
+  "phone": "",
+  "linkedin": "https://www.linkedin.com/in/your-profile",
+  "resume": "resume.docx",
+  "icims_auto": true,
+  "focus_terms": [
+    "AI",
+    "technical",
+    "program",
+    "project",
+    "operations",
+    "implementation",
+    "governance",
+    "process"
+  ],
+  "minimum_score": 7,
+  "employment": {
+    "company": "Example Co",
+    "title": "Manager",
+    "start_month": "May",
+    "start_year": 2024,
+    "end": ""
+  },
+  "city": "Columbus",
+  "state": "OH",
+  "location": "Columbus, OH, United States",
+  "local_radius_miles": 40,
+  "metro": false,
+  "usajobs": {
+    "locations": [
+      "Columbus, Ohio"
+    ]
+  },
+  "resume_filename": "JaneDoe_Resume.docx",
+  "home_area": {
+    "home": [
+      39.9612,
+      -82.9988
+    ],
+    "zip": "43215",
+    "states": [
+      "oh",
+      "ohio"
+    ],
+    "places": {
+      "columbus": [
+        39.9612,
+        -82.9988
+      ],
+      "dublin": [
+        40.0992,
+        -83.1141
+      ],
+      "westerville": [
+        40.1262,
+        -82.9291
+      ]
+    },
+    "metro": {
+      "name": "cincinnati",
+      "center": [
+        39.1031,
+        -84.512
+      ],
+      "states": [
+        "oh",
+        "ohio"
+      ],
+      "places": {
+        "cincinnati": [
+          39.1031,
+          -84.512
+        ]
+      }
+    }
+  },
+  "timezone": "any",
+  "disqualifiers": {
+    "active security clearance": 20
+  }
+}
