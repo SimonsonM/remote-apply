@@ -4,7 +4,7 @@ import argparse
 import json
 import sqlite3
 from collections import Counter
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -75,7 +75,7 @@ def snapshot(db_path=DB):
     if not Path(db_path).is_file():
         return empty
 
-    conn = sqlite3.connect(f"file:{Path(db_path).resolve()}?mode=ro", uri=True, timeout=10)
+    conn = sqlite3.connect(f"file:{Path(db_path).resolve()}?mode=ro", uri=True, timeout=2)
     conn.row_factory = sqlite3.Row
     try:
         if not conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='jobs'").fetchone():
@@ -122,15 +122,39 @@ def snapshot(db_path=DB):
         conn.close()
 
 
+CACHE = ROOT / ".dashboard_cache.json"
+
+
+def _save_cache(data):
+    try:
+        CACHE.write_text(json.dumps({"saved_at": datetime.now().strftime("%Y-%m-%d %H:%M"), "data": data}))
+    except OSError:
+        pass
+
+
+def _load_cache():
+    """Last successful snapshot, marked stale; None if there has never been one."""
+    try:
+        cached = json.loads(CACHE.read_text())
+    except (OSError, ValueError):
+        return None
+    return {**cached["data"], "stale_since": cached["saved_at"]}
+
+
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = self.path.split("?", 1)[0]
         if path == "/api/dashboard":
             try:
-                body = json.dumps({**snapshot(), "first_name": first_name()}, ensure_ascii=False).encode("utf-8")
+                data = {**snapshot(), "first_name": first_name()}
+                _save_cache(data)
             except sqlite3.Error as exc:
-                self.send_error(503, f"Database unavailable: {exc}")
-                return
+                # An application run holds the write lock for long stretches; show the last good data instead of nothing.
+                data = _load_cache()
+                if data is None:
+                    self.send_error(503, f"Database unavailable: {exc}")
+                    return
+            body = json.dumps(data, ensure_ascii=False).encode("utf-8")
             content_type = "application/json; charset=utf-8"
         else:
             assets = {"/": ("index.html", "text/html; charset=utf-8"),

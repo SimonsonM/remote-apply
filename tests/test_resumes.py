@@ -1,57 +1,64 @@
-"""Track resumes: routing, and per-job tailoring may only reorder approved lines."""
+"""The public fictional example is a complete, renderable fact base."""
 import json
+from pathlib import Path
+
 import pytest
+from docx import Document
 import resumes
 
-pytestmark = pytest.mark.skipif(not resumes.FACTS.exists(), reason='resume_facts.json is local-only (PII)')
+
+@pytest.fixture(autouse=True)
+def example_facts(tmp_path, monkeypatch):
+    source = Path(resumes.__file__).with_name('resume_facts.example.json')
+    target = tmp_path / 'resume_facts.json'
+    target.write_bytes(source.read_bytes())
+    monkeypatch.setattr(resumes, 'FACTS', target)
+    monkeypatch.setattr(resumes, 'OUT', tmp_path / 'rendered')
 
 
-@pytest.mark.parametrize('title,want', [
-    ('Senior Technical Program Manager', 'ProgramMgmt'),
-    ('Manager, Implementation Management', 'ProgramMgmt'),
-    ('AI Operations Manager', 'AIOps'),
-    ('Director, AI Solutions Strategy & Planning', 'AIOps'),
-    ('Product Marketing Manager', 'Marketing'),
-    ('Director, Marketing Operations', 'Marketing'),
-    ('IT Manager', 'ITSecurity'),
-    ('Identity and Access Management Analyst', 'ITSecurity'),
-    ('Chief of Staff', 'ProgramMgmt'),
-])
-def test_pick_variant(title, want):
-    assert resumes.pick_variant(title) == want
+def test_keyword_list_regex_and_default():
+    assert resumes.pick_variant('Senior Project Manager') == 'ProjectMgmt'
+    assert resumes.pick_variant('Business Intelligence Analyst') == 'DataAnalytics'
+    assert resumes.pick_variant('Unrelated Role') == 'ProjectMgmt'
+
+
+def test_title_priority_over_description():
+    assert resumes.pick_variant('Project Manager', 'analytics ' * 100) == 'ProjectMgmt'
+    f = resumes.facts()
+    f['track_settings']['title_priority'] = ['DataAnalytics', 'ProjectMgmt']
+    resumes.FACTS.write_text(json.dumps(f))
+    assert resumes.pick_variant('Project Manager and Data Analyst') == 'DataAnalytics'
+
+
+def test_no_keyword_track_only_default():
+    f = resumes.facts()
+    f['variants']['General'] = dict(f['variants']['ProjectMgmt'], keywords=[])
+    f['track_settings']['default'] = 'General'
+    resumes.FACTS.write_text(json.dumps(f))
+    assert resumes.pick_variant('Unrelated Role') == 'General'
+    assert resumes.pick_variant('Project Manager') == 'ProjectMgmt'
+
+
+def test_plan_render_and_for_job():
+    planned = resumes.plan('DataAnalytics')
+    path = resumes.render(planned, resumes.OUT / 'sample.docx')
+    assert path.exists()
+    content = '\n'.join(p.text for p in Document(path).paragraphs)
+    assert 'Jane Doe' in content and 'Built dashboards' in content
+    tailored, track = resumes.for_job({'title': 'Data Analyst', 'description': 'SQL dashboards'})
+    assert track == 'DataAnalytics' and tailored.exists()
+    again, _ = resumes.for_job({'title': 'Data Analyst', 'description': 'SQL dashboards'})
+    assert again == tailored
 
 
 def test_tailoring_only_reorders_approved_lines():
     f = resumes.facts()
-    posting = 'We need someone to own IAM and PAM rollout, endpoint hardening, and stakeholder communication.'
-    for name, v in f['variants'].items():
-        base, tailored = resumes.plan(name), resumes.plan(name, posting)
-        assert tailored['summary'] == base['summary'] and tailored['headline'] == base['headline']
+    for name in f['variants']:
+        base = resumes.plan(name)
+        tailored = resumes.plan(name, 'dashboard SQL budget and stakeholders')
+        assert (tailored['headline'], tailored['summary']) == (base['headline'], base['summary'])
         assert sorted(map(tuple, tailored['skills'])) == sorted(map(tuple, base['skills']))
-        assert [j for j, _ in tailored['jobs']] == [j for j, _ in base['jobs']]  # job order is fixed
-        for (job, a), (_, b) in zip(base['jobs'], tailored['jobs']):
-            assert sorted(a) == sorted(b)
-            assert set(b) <= set(f['jobs'][job][4].values())
-
-
-def test_tailoring_moves_relevant_line_up():
-    p = resumes.plan('ITSecurity', 'Hiring for IAM and PAM: identity and access management, privileged access management.')
-    consult = dict(p['jobs'])['consult']
-    assert consult[0].startswith('Work with identity and access management')
-
-
-def test_for_job_writes_named_file(tmp_path, monkeypatch):
-    monkeypatch.setattr(resumes, 'OUT', tmp_path)
-    path, variant = resumes.for_job({'title': 'Product Marketing Manager', 'description': 'brand and content'})
-    assert variant == 'Marketing' and path.name == resumes.FILENAME and path.exists()
-    again, _ = resumes.for_job({'title': 'Product Marketing Manager', 'description': 'brand and content'})
-    assert again == path  # cached
-
-
-@pytest.mark.parametrize('title,want', [
-    ('Project Manager - Medical Communications', 'ProgramMgmt'),
-    ('Vice President, AI Context Content Management', 'AIOps'),
-    ('Content Marketing Manager', 'Marketing'),
-])
-def test_ambiguous_words(title, want):
-    assert resumes.pick_variant(title) == want
+        assert [key for key, _ in tailored['jobs']] == [key for key, _ in base['jobs']]
+        for (key, original), (_, reranked) in zip(base['jobs'], tailored['jobs']):
+            assert sorted(original) == sorted(reranked)
+            assert set(reranked) <= set(f['jobs'][key][4].values())

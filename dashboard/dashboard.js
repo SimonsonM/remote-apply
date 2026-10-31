@@ -173,7 +173,9 @@ function render(data) {
   for (const [id, value] of Object.entries({filterAllCount:data.jobs.length,filterStagedCount:c.staged || 0,
     filterCaptchaCount:c.captcha || 0,filterNeedsCount:c.needs_you || 0,
     filterUnconfirmedCount:c.unconfirmed || 0,filterManualCount:c.manual || 0})) setText(id, number.format(value));
-  setText('dataStatus', data.database_found ? 'Connected to your local applications database' : 'No applications database found yet');
+  setText('dataStatus', data.stale_since
+    ? `An application run is using the database right now. Showing data from ${data.stale_since}; refresh after the run finishes.`
+    : data.database_found ? 'Connected to your local applications database' : 'No applications database found yet');
   setText('updatedTime', `Updated ${new Date().toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})}`);
   renderActivity(data);
   renderPipeline(data);

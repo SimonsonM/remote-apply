@@ -26,12 +26,6 @@ def _filename():
 
 FILENAME = _filename()
 
-TRACKS = {
-    "Marketing": r"\b(marketing|brand|content (marketing|strategy|creat\w*)|demand gen|growth marketing|campaigns?|social media|marketing communications|go-to-market|gtm|messaging|positioning|copywrit\w*)\b",
-    "ITSecurity": r"\b(security|cyber\w*|iam|pam|identity|access management|soc|grc|infosec|threat|vulnerabilit\w*|it manager|it specialist|systems? administrat\w*|infrastructure|network|endpoint|help ?desk|it support|it operations)\b",
-    "AIOps": r"\b(ai|a\.i\.|artificial intelligence|machine learning|ml|mlops|llms?|gen ?ai|generative|agents?|agentic|automation|data science|analytics engineer\w*)\b",
-    "ProgramMgmt": r"\b(program|project|operations|ops|implementation|pmo|delivery|scrum|agile|portfolio|business operations|strategy)\b",
-}
 STOP = set("the and for with you your our are will this that from have has into who what about their they them can all not but more than per job role team work working including using use across within such other also may must able new well both each any".split())
 
 
@@ -39,22 +33,39 @@ def facts():
     return json.loads(FACTS.read_text())
 
 
+def tracks():
+    """Career tracks: name -> keyword regex, from resume_facts.json variants[name]["keywords"]
+    (a regex string or a list of words/phrases). Tracks without keywords are only used as the default."""
+    out = {}
+    for name, v in facts()["variants"].items():
+        kw = v.get("keywords")
+        if kw:
+            out[name] = kw if isinstance(kw, str) else r"\b(" + "|".join(re.escape(w) for w in kw) + r")\b"
+    return out
+
+
 def pick_variant(title, description=""):
-    """Highest weighted match; title counts 5x the first 4000 chars of the description. Ties go to ProgramMgmt."""
+    """Highest weighted keyword match; title counts 5x the first 4000 chars of the description.
+    Order and fallback come from resume_facts.json "track_settings": default, tie_order, title_priority."""
+    f = facts()
+    names = list(f["variants"])
+    cfg = f.get("track_settings") or {}
+    default = cfg.get("default") if cfg.get("default") in names else names[0]
+    pats = tracks()
+    if not pats:
+        return default
     title, desc = title or "", (description or "")[:4000]
-    scores = {}
-    for name, pat in TRACKS.items():
-        rx = re.compile(pat, re.I)
-        scores[name] = 5 * len(rx.findall(title)) + len(rx.findall(desc))
+    scores = {n: 5 * len(re.findall(p, title, re.I)) + len(re.findall(p, desc, re.I)) for n, p in pats.items()}
     best = max(scores.values())
     if best == 0:
-        return "ProgramMgmt"
-    order = ["ProgramMgmt", "AIOps", "ITSecurity", "Marketing"]
-    title_hits = {n: len(re.findall(TRACKS[n], title, re.I)) for n in order}
+        return default
+    order = [n for n in cfg.get("tie_order", [default] + names) if n in pats] + [n for n in pats if n not in cfg.get("tie_order", [default] + names)]
+    title_hits = {n: len(re.findall(pats[n], title, re.I)) for n in pats}
     # A clear title signal wins over description volume (e.g. "Product Marketing Manager" at an AI company).
     if max(title_hits.values()):
         top = max(title_hits.values())
-        return next(n for n in ["Marketing", "ITSecurity", "AIOps", "ProgramMgmt"] if title_hits[n] == top)
+        prio = [n for n in cfg.get("title_priority", names) if n in pats] + [n for n in pats if n not in cfg.get("title_priority", names)]
+        return next(n for n in prio if title_hits[n] == top)
     return next(n for n in order if scores[n] == best)
 
 

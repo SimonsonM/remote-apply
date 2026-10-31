@@ -895,6 +895,8 @@ def scan():
                      "OR lower(title) GLOB '*freelance*' OR lower(title) GLOB '*1099*' OR lower(substr(description,1,3000)) GLOB '*contract-to-hire*' "
                      "OR lower(substr(description,1,3000)) GLOB '*contract to hire*' OR lower(substr(description,1,3000)) GLOB '*-month contract*'")  # contract roles first
         conn.execute("UPDATE jobs SET status='low_fit' WHERE status='new' AND fit < ?", (floor,))
+        # Leads (Adzuna, Remotive, Himalayas) skip the browser, but still have to clear the fit floor to reach the manual list.
+        conn.execute("UPDATE jobs SET status='low_fit' WHERE status='manual' AND source IN ('adzuna','remotive','himalayas') AND fit < ?", (floor,))
         conn.execute("UPDATE jobs SET status='new' WHERE status='low_fit' AND fit >= ?", (floor,))
         ai_floor = profile.get("ai_min_fit", floor - 6)
         for url, title in conn.execute("SELECT url, title FROM jobs WHERE status='low_fit' AND fit >= ?", (ai_floor,)).fetchall():
@@ -2951,6 +2953,14 @@ def main():
     imported = sub.add_parser('resume-import', help='review facts from a resume')
     imported.add_argument('path')
     sub.add_parser('facts', help='list resume facts and approval status')
+    tracks_group = sub.add_parser('tracks', help='create and edit private career tracks').add_subparsers(dest='tracks_action', required=True)
+    tracks_group.add_parser('init').add_argument('--force', action='store_true')
+    tracks_group.add_parser('list')
+    for action in ('add', 'edit', 'remove', 'default'):
+        parser = tracks_group.add_parser(action)
+        parser.add_argument('name')
+        if action == 'add':
+            parser.add_argument('--from', dest='source')
     response = sub.add_parser('response'); response.add_argument('url'); response.add_argument('kind', choices=followup.KINDS)
     response.add_argument('summary', nargs='?', default=''); response.add_argument('--file', dest='file_path')
     sub.add_parser('followups')
@@ -3009,6 +3019,15 @@ def main():
         with db() as conn:
             for row in conn.execute('SELECT id,key,value,status,source FROM profile_facts ORDER BY id'):
                 print(' | '.join(map(str, row)))
+        return
+    if x.cmd == 'tracks':
+        import tracks_cmd
+        with db() as conn:
+            try:
+                tracks_cmd.run(x.tracks_action, conn, ROOT, getattr(x, 'name', None),
+                               getattr(x, 'source', None), getattr(x, 'force', False))
+            except (ValueError, OSError) as exc:
+                ap.error(str(exc))
         return
     if x.cmd == 'doctor':
         import doctor

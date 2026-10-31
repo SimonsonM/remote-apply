@@ -1,0 +1,48 @@
+{
+  "name": "Jane Doe",
+  "contact": "jane@example.com | 555-010-1234 | Columbus, OH",
+  "jobs": {
+    "delivery": ["Project Manager", "Northstar Civic Works", "Columbus, OH", "2022 - Present", {
+      "timeline": "Managed project timelines for three community service launches.",
+      "partners": "Coordinated weekly planning with partner organizations.",
+      "budget": "Tracked program budgets and reported monthly variances."
+    }],
+    "insights": ["Data Analyst", "Lakeview Market Research", "Remote", "2019 - 2022", {
+      "dashboard": "Built dashboards to summarize survey results for clients.",
+      "quality": "Checked source data for missing values before each report.",
+      "forecast": "Prepared monthly forecasts from approved sales datasets."
+    }],
+    "coordinator": ["Program Coordinator", "Elm Street Library", "Columbus, OH", "2016 - 2019", {
+      "schedule": "Maintained schedules for public workshops and volunteers.",
+      "feedback": "Collected participant feedback and summarized recurring requests."
+    }]
+  },
+  "education": ["B.A. in Sociology, Example State University"],
+  "certs": ["Project Management Certificate, Example Institute"],
+  "skills": {
+    "planning": ["Project planning", "Schedules, budgets, and stakeholder updates"],
+    "analysis": ["Data analysis", "Spreadsheets, SQL, and dashboards"],
+    "communication": ["Communication", "Facilitation and written reporting"]
+  },
+  "variants": {
+    "ProjectMgmt": {
+      "headline": "Project Manager",
+      "summary": "Project manager experienced in community programs and cross-team planning.",
+      "order": [["delivery", ["timeline", "partners", "budget"]], ["coordinator", ["schedule", "feedback"]], ["insights", ["dashboard", "quality"]]],
+      "skills": ["planning", "communication", "analysis"],
+      "keywords": ["project manager", "program manager", "project management"]
+    },
+    "DataAnalytics": {
+      "headline": "Data Analyst",
+      "summary": "Data analyst experienced in reporting, data checks, and dashboards.",
+      "order": [["insights", ["dashboard", "quality", "forecast"]], ["delivery", ["budget", "timeline"]], ["coordinator", ["feedback"]]],
+      "skills": ["analysis", "communication", "planning"],
+      "keywords": "\\b(?:data analyst|analytics|business intelligence)\\b"
+    }
+  },
+  "track_settings": {
+    "default": "ProjectMgmt",
+    "tie_order": ["ProjectMgmt", "DataAnalytics"],
+    "title_priority": ["ProjectMgmt", "DataAnalytics"]
+  }
+}

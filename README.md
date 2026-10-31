@@ -2,6 +2,10 @@
 
 A self-hosted job application assistant. It finds openings, ranks them against your resume, fills out the applications, and tracks every one. It runs on your own computer with local AI models, so your resume and answers stay on your machine.
 
+## Career tracks
+
+A career track is a resume version with its own headline, summary, selected jobs, bullets, skills, and job-title keywords. Run `./ra tracks init` after approving your resume facts, then `./ra tracks add NAME` to create another version. See `resume_facts.example.json` for a fictional, renderable example. Your `resume_facts.json` is a private local file saved with mode 0600. Per-job tailoring only reorders your own approved lines.
+
 It never invents qualifications or screening answers, and it never counts an application as submitted just because a button was clicked.
 
 ## What it does

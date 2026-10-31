@@ -48,3 +48,5 @@ docs/codex/
 build/_generalize.py
 *.bak-*
 boards.json
+.dashboard_cache.json
+resume_facts.json.bak*

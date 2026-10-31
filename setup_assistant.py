@@ -252,5 +252,10 @@ def _run(conn,root,read,write,non_interactive,answers_file):
     write(f'Approved answers: {approved}.')
     write(f'Still pending: {len(pending)} answers.')
     write('Pending questions: '+('; '.join(pending) if pending else 'none'))
+    if not (root/'resume_facts.json').exists() and resume_import.approved_facts(conn):
+        create = data.get('create_tracks', False) if non_interactive else read('Create career tracks now? [y/N] ').strip().lower() in ('y','yes')
+        if create is True or (isinstance(create,str) and create.lower() in ('y','yes')):
+            import tracks_cmd
+            tracks_cmd.run('init',conn,root,read=read,write=write)
     write('Next command: ./ra (choose option 2 to finish pending answers)')
     return profile
