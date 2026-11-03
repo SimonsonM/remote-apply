@@ -433,7 +433,13 @@ US_LOCATION_HINTS = ('usa', 'u.s.', 'us,', 'united states', 'north america', 'no
                      'worldwide', 'anywhere', 'global', 'remote - worldwide', 'americas')
 
 
+# profile.json "remote_anywhere": true accepts remote roles open to any country, not just ones open to US residents.
+REMOTE_ANYWHERE = bool(_PROFILE.get("remote_anywhere", False))
+
+
 def _allows_us_freeform(location):
+    if REMOTE_ANYWHERE:
+        return True
     if not location or not location.strip():
         return True
     return any(re.search(r'(?<![a-z])' + re.escape(hint) + r'(?![a-z])', location.lower())
@@ -459,7 +465,7 @@ def tz_offsets(profile):
 
 def himalayas_allows_us(job, home_utc_offsets=()):
     countries = job.get('locationRestrictions') or []
-    if countries and not any(str(c).strip().lower() in ('united states', 'usa', 'u.s.', 'united states of america') for c in countries):
+    if countries and not REMOTE_ANYWHERE and not any(str(c).strip().lower() in ('united states', 'usa', 'u.s.', 'united states of america') for c in countries):
         return False
     offsets = job.get('timezoneRestrictions') or []
     if offsets and home_utc_offsets:
@@ -515,7 +521,7 @@ def fetch_remotive(cfg):
         seen.add(url)
         loc = j.get('candidate_required_location') or 'Worldwide'
         desc = clean(j.get('description') or '')
-        yield dict(company=j.get('company_name') or '', title=title, location=f'Remote - United States / {loc}',
+        yield dict(company=j.get('company_name') or '', title=title, location=f'Remote - {loc}' if REMOTE_ANYWHERE else f'Remote - United States / {loc}',
                    description=desc, url=url, apply_url=url, source='remotive', salary=_remotive_salary(j.get('salary')) or salary_from(desc),
                    token='remotive', job_id=str(j.get('id') or ''), posted_at=_remote_posted(j.get('publication_date')))
 
@@ -539,7 +545,7 @@ def fetch_himalayas(cfg):
             countries = ', '.join(j.get('locationRestrictions') or []) or 'Worldwide'
             currency = (j.get('currency') or '').upper()
             sal = _remote_salary(j.get('minSalary'), j.get('maxSalary'), (j.get('salaryPeriod') or '').lower()) if currency in ('', 'USD') else ''
-            yield dict(company=j.get('companyName') or '', title=title, location=f'Remote - United States / {countries}',
+            yield dict(company=j.get('companyName') or '', title=title, location=f'Remote - {countries}' if REMOTE_ANYWHERE else f'Remote - United States / {countries}',
                        description=desc, url=url, apply_url=url, source='himalayas', salary=sal or salary_from(desc),
                        token='himalayas', job_id=str(j.get('id') or j.get('guid') or ''), posted_at=_remote_posted(j.get('pubDate')))
         if len(jobs) < page_size:
@@ -867,7 +873,7 @@ CONTRACT = re.compile(r"\b(contract|contractor|1099|c2h|contract[- ]to[- ]hire|t
 
 def score(job, profile, eu):
     title, loc, body = job["title"].lower(), job["location"], job["description"].lower()
-    remote_ok = not BAD_LOC.search(loc) and REMOTE.search(loc) and US_OK.search(loc)
+    remote_ok = not BAD_LOC.search(loc) and REMOTE.search(loc) and (US_OK.search(loc) or profile.get("remote_anywhere", REMOTE_ANYWHERE))
     metro = (profile.get("metro") or profile.get("chicago", False)) and \
         metro_ok(loc, profile.get("metro_radius_miles", profile.get("chicago_radius_miles", 30)))
     if not remote_ok and not job.get("local") and not metro and not local_ok(loc, profile.get("local_radius_miles", 40)):
@@ -1074,8 +1080,29 @@ def restricted(text):
     return bool(WAIVER.search(text) or (AI_ATTEST.search(text) and not ai_notice_only(text)))
 
 
+WORK_AUTH_Q = re.compile(r"authori[sz]|sponsor|visa|eligib\w* to work|right to work|legally (able|permitted|entitled) to work|work permit|citizen", re.I)
+FOREIGN_COUNTRY = re.compile(r"\b(uk|u\.k\.|united kingdom|great britain|britain|england|scotland|ireland|canada|mexico|brazil|argentina|colombia|chile|"
+                             r"europe|european union|eu|eea|germany|france|spain|portugal|italy|netherlands|belgium|switzerland|austria|"
+                             r"poland|sweden|denmark|norway|finland|czech\w*|romania|greece|israel|uae|united arab emirates|india|"
+                             r"singapore|japan|korea|china|hong kong|taiwan|philippines|australia|new zealand|south africa|nigeria|kenya)\b", re.I)
+
+
+def foreign_work_question(label, job=None):
+    """A work-authorization question about a country other than the US (named, or implied by a non-US posting).
+    Only a US work status is on file, so these always go to the user."""
+    if not WORK_AUTH_Q.search(label):
+        return False
+    if FOREIGN_COUNTRY.search(label):
+        return True
+    loc = (job or {}).get("location") or ""
+    names_us = re.search(r"\b(united states|u\.s\.|usa|us)\b", label, re.I)
+    return bool(not names_us and loc and FOREIGN_COUNTRY.search(loc) and not US_OK.search(loc))
+
+
 def resolve(label, prof, bank, company):
     l = strip_label(label)
+    if foreign_work_question(l, CURRENT_JOB):
+        return 
     if EMPLOYER_HISTORY_Q.search(l):
         if any(ckey(name) in ckey(l) or ckey(company) == ckey(name) for name in past_employers(prof)):
             return ''

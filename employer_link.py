@@ -44,7 +44,8 @@ def normalized_company(name):
 def location_compatible(lead, posting):
     a, b = lead.lower(), posting.lower()
     if 'remote' in a:
-        return 'remote' in b and not re.search(r'\b(uk|canada|europe|india)\b', b)
+        region = lambda t: set(re.findall(r'\b(uk|canada|europe|india)\b', t))
+        return 'remote' in b and region(b) <= region(a)
     city = re.sub(r'^(onsite|hybrid)\s*-\s*', '', a).split('/')[-1].split(',')[0].strip()
     return bool(city and city not in ('us', 'united states') and re.search(r'\b' + re.escape(city) + r'\b', b))
 

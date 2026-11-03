@@ -85,5 +85,6 @@
     "active security clearance": 20
   },
   "agency_daily_cap": 2,
-  "past_employers": []
+  "past_employers": [],
+  "remote_anywhere": false
 }

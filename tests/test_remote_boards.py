@@ -7,6 +7,7 @@ import pytest
 
 
 def test_remotive_parsing_and_us_eligibility(monkeypatch):
+    monkeypatch.setattr(apply, 'REMOTE_ANYWHERE', False)  # US-only mode (the default)
     calls = []
     def fake(url):
         calls.append(url)
@@ -30,6 +31,7 @@ def test_remotive_parsing_and_us_eligibility(monkeypatch):
 
 
 def test_himalayas_parsing_paging_and_timezone(monkeypatch):
+    monkeypatch.setattr(apply, 'REMOTE_ANYWHERE', False)  # US-only mode (the default)
     calls, sleeps = [], []
     def fake(url):
         calls.append(url)
