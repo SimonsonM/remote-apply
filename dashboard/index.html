@@ -40,6 +40,19 @@
           <article class="metric-card"><div class="metric-top"><span>Jobs tracked</span><span class="metric-glyph">▤</span></div><div class="metric-value" id="metricTracked">—</div><div class="metric-foot">Across every status</div></article>
         </section>
 
+        <section class="panel outcomes-panel" aria-label="Response statistics">
+          <div class="panel-heading"><div><p class="panel-kicker">OUTCOMES</p><h2>How employers are responding</h2><p>Percentages are of every application actually submitted</p></div></div>
+          <div class="outcomes">
+            <div class="outcome"><span>Total applied</span><strong id="outSubmitted">—</strong><small>Submitted applications</small></div>
+            <div class="outcome"><span>Rejected</span><strong id="outRejected">—</strong><small id="outRejectedNote">—</small></div>
+            <div class="outcome"><span>Response rate</span><strong id="outResponse">—</strong><small id="outResponseNote">—</small></div>
+            <div class="outcome"><span>Interviews / offers</span><strong id="outInterviews">—</strong><small id="outInterviewsNote">—</small></div>
+            <div class="outcome"><span>Awaiting reply</span><strong id="outAwaiting">—</strong><small id="outAwaitingNote">—</small></div>
+          </div>
+          <div class="outcome-bar" id="outcomeBar" role="img" aria-label="Split of submitted applications"></div>
+          <div class="outcome-legend"><span><i style="background:var(--danger)"></i>Rejected</span><span><i style="background:var(--teal)"></i>Interview / offer</span><span><i style="background:var(--faint)"></i>Awaiting</span></div>
+        </section>
+
         <section id="activity" class="insights-grid" aria-label="Visual statistics">
           <article class="panel activity-panel"><div class="panel-heading"><div><p class="panel-kicker">MOMENTUM</p><h2>Application activity</h2><p>Apply dates recorded over the last 14 days</p></div><span class="panel-pill">14 DAYS</span></div><div class="activity-chart" id="activityChart" role="img" aria-label="Application dates recorded by day"></div><div class="chart-axis"><span id="activityStart">—</span><span id="activityEnd">Today</span></div></article>
           <article class="panel pipeline-panel"><div class="panel-heading"><div><p class="panel-kicker">PIPELINE</p><h2>Where things stand</h2><p>Applications and leads in motion</p></div></div><div class="pipeline-layout"><div class="donut" id="pipelineDonut" role="img" aria-label="Active job status distribution"><div class="donut-center"><strong id="donutTotal">—</strong><span>active jobs</span></div></div><div class="pipeline-legend" id="pipelineLegend"></div></div></article>

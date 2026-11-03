@@ -64,14 +64,34 @@ def action_detail(status, notes, blockers):
     return "Finish application", "Open the application and complete the remaining steps."
 
 
+def outcomes(counts, conn=None, today=None):
+    """Response statistics over everything actually submitted (applied, rejected, interview, offer)."""
+    applied, rejected = counts.get("applied", 0), counts.get("rejected", 0)
+    talking = counts.get("interview", 0) + counts.get("offer", 0)
+    submitted = applied + rejected + talking
+    pct = lambda n: round(100 * n / submitted, 1) if submitted else 0.0
+    ghosted = rejected_week = 0
+    if conn is not None:
+        today = today or date.today()
+        ghosted = conn.execute("SELECT count(*) FROM jobs WHERE status='applied' AND applied_at != '' "
+                               "AND substr(applied_at,1,10) < ?", ((today - timedelta(days=30)).isoformat(),)).fetchone()[0]
+        rejected_week = conn.execute("SELECT count(*) FROM jobs WHERE status='rejected' AND substr(updated,1,10) >= ?",
+                                     ((today - timedelta(days=7)).isoformat(),)).fetchone()[0]
+    return {"submitted": submitted, "rejected": rejected, "rejected_pct": pct(rejected),
+            "rejected_week": rejected_week, "interviews": talking, "interview_pct": pct(talking),
+            "responded": rejected + talking, "response_pct": pct(rejected + talking),
+            "awaiting": applied, "awaiting_pct": pct(applied), "no_reply_30d": ghosted}
+
+
 def snapshot(db_path=DB):
     """Build one consistent read-only view from the current jobs database."""
     today = date.today()
     days = [(today - timedelta(days=13 - i)).isoformat() for i in range(14)]
     empty = {"database_found": False, "as_of": today.isoformat(), "status_counts": {},
              "source_counts": [], "activity": [{"date": day, "count": 0} for day in days],
-             "jobs": [], "totals": {"tracked": 0, "action": 0, "applied": 0,
-                                    "interviews": 0, "offers": 0, "open_blockers": 0}}
+             "jobs": [], "outcomes": outcomes({}),
+             "totals": {"tracked": 0, "action": 0, "applied": 0,
+                        "interviews": 0, "offers": 0, "open_blockers": 0}}
     if not Path(db_path).is_file():
         return empty
 
@@ -113,7 +133,7 @@ def snapshot(db_path=DB):
         return {"database_found": True, "as_of": today.isoformat(), "status_counts": counts,
                 "source_counts": source_counts,
                 "activity": [{"date": day, "count": activity_counts.get(day, 0)} for day in days],
-                "jobs": jobs,
+                "jobs": jobs, "outcomes": outcomes(counts, conn),
                 "totals": {"tracked": sum(counts.values()), "action": len(jobs),
                            "applied": counts.get("applied", 0),
                            "interviews": counts.get("interview", 0), "offers": counts.get("offer", 0),

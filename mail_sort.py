@@ -1,18 +1,19 @@
 """File job-application email out of the Proton inbox into Folders/Job Applications (via Bridge).
-Usage: mail_sort.py [--dry] [--days N]   (moves only; never deletes)"""
+Usage: mail_sort.py [--dry] [--days N] [--reject-backfill DAYS]
+Moves job mail; the only thing it trashes is Greenhouse "Security code for your application" mail older than an hour."""
 import email, email.header, email.utils, imaplib, json, os, re, ssl, sys, datetime
 from pathlib import Path
 
 FOLDER = "Folders/Job Applications"
 STATE = Path(__file__).with_name("mail_sort_state.json")
 ATS = re.compile(r"(greenhouse|lever\.co|ashbyhq|myworkday|workday|icims|smartrecruiters|taleo|successfactors|jobvite|"
-                 r"bamboohr|breezy|workable|recruitee|teamtailor|pinpoint|jazzhr|rippling|dover\.com|oraclecloud|"
+                 r"gem\.com|bamboohr|breezy|workable|recruitee|teamtailor|pinpoint|jazzhr|rippling|dover\.com|oraclecloud|"
                  r"applytojob|hire\.|careers|recruiting|talent|candidate|no-?reply.*jobs|adzuna|usajobs)", re.I)
 SUBJ = re.compile(r"(thank(s| you) for (applying|your (application|interest))|application (received|submitted|confirmation|"
                   r"update|status)|your application|we received your application|candidate (home|account)|"
                   r"verify your (candidate|email)|next steps|interview|unfortunately|position|role at|job alert|"
-                  r"applying to|application for)", re.I)
-NOT = re.compile(r"(proton|bank|invoice|receipt|statement|github|google|linkedin news|newsletter)", re.I)
+                  r"applying to|application for|update from)", re.I)
+NOT = re.compile(r"(proton|bank|invoice|receipt|statement|github|google|linkedin news|newsletter|community)", re.I)
 
 
 def keys():
@@ -28,16 +29,21 @@ def dec(v):
 
 
 def is_job(frm, subj):
+    if re.search(r"community|newsletter|webinar", subj, re.I):
+        return False
     if NOT.search(frm) and not ATS.search(frm):
         return False
     if re.search(r"no-?reply|recruit|talent|careers|jobs", frm, re.I) and \
-            re.search(r"(thanks? (you )?for applying|application for|regarding (your )?application|your application)", subj, re.I):
+            re.search(r"(thanks? (you )?for (applying|your interest)|application for|regarding (your )?application|your application|"
+                      r"your .{0,60} application|update (on|regarding) your)", subj, re.I):
         return True
     return bool(ATS.search(frm) and SUBJ.search(subj)) or bool(re.search(r"(myworkday|greenhouse|lever\.co|ashbyhq|icims|smartrecruiters)", frm, re.I))
 
 
-REJECT = re.compile(r"(not (to )?move forward|decided to (pursue|move forward with|proceed with) other|"
-                    r"no longer (being )?consider|not been selected|will not be moving forward|other candidates whose)", re.I)
+REJECT = re.compile(r"(not (to )?move forward|not moving forward with|(won\S{1,8}t|will not|not) be moving forward|"
+                    r"decided to (pursue|move forward with|proceed with) (other|another)|move forward with (other|another) candidate|"
+                    r"proceed with other candidates|no longer (being )?consider|not been selected|other candidates whose|"
+                    r"going in a direction that better fits|regret to inform)", re.I)
 
 
 def company_key(value):
@@ -130,6 +136,47 @@ def confirm_backfill(m, days):
     return log_confirmations(m, f'"{FOLDER}"', hits)
 
 
+def reject_backfill(m, days):
+    """One-off: re-check the whole Job Applications folder for rejections (does not touch the cursor)."""
+    m.select(f'"{FOLDER}"', readonly=True)
+    since = (datetime.date.today() - datetime.timedelta(days=days)).strftime("%d-%b-%Y")
+    _, data = m.uid("SEARCH", None, f"SINCE {since}")
+    hits = []
+    for uid in data[0].split():
+        _, resp = m.uid("FETCH", uid, "(BODY.PEEK[HEADER.FIELDS (FROM SUBJECT)])")
+        part = next((p for p in resp if isinstance(p, tuple)), None)
+        if part:
+            msg = email.message_from_bytes(part[1])
+            hits.append((uid, dec(msg["From"]), dec(msg["Subject"])))
+    return log_rejections(m, f'"{FOLDER}"', hits)
+
+
+def purge_codes(m, dry=False, keep_hours=1):
+    """Trash Greenhouse 'Security code for your application' mail older than keep_hours (seccode.py reads them within seconds)."""
+    n = 0
+    now = datetime.datetime.now(datetime.timezone.utc)
+    for box in ("INBOX", f'"{FOLDER}"'):
+        m.select(box)
+        _, d = m.uid("SEARCH", None, 'FROM "greenhouse" SUBJECT "Security code for your application"')
+        uids, old = d[0].split(), []
+        for i in range(0, len(uids), 200):
+            _, resp = m.uid("FETCH", b",".join(uids[i:i + 200]), "(INTERNALDATE)")
+            for line in resp:
+                line = line if isinstance(line, bytes) else line[0]
+                u, dd = re.search(rb"UID (\d+)", line), re.search(rb'INTERNALDATE "([^"]+)"', line)
+                if u and dd and now - datetime.datetime.strptime(dd.group(1).decode().strip(), "%d-%b-%Y %H:%M:%S %z") > datetime.timedelta(hours=keep_hours):
+                    old.append(u.group(1))
+        if old and not dry:
+            for i in range(0, len(old), 100):
+                s = b",".join(old[i:i + 100]).decode()
+                typ, _ = m.uid("MOVE", s, "Trash")
+                if typ != "OK":
+                    m.uid("COPY", s, "Trash"); m.uid("STORE", s, "+FLAGS", r"(\Deleted)"); m.expunge()
+        n += len(old)
+    print(f"security codes {'to trash' if dry else 'trashed'} {n}")
+    return n
+
+
 def folder_rejections(m, days):
     m.select(f'"{FOLDER}"', readonly=True)
     validity = (m.response("UIDVALIDITY")[1] or [b""])[0].decode()
@@ -170,6 +217,9 @@ def main():
     m.login(env["BRIDGE_USER"], env["BRIDGE_PASS"])
     if not dry:
         m.create(f'"{FOLDER}"')  # harmless if it exists
+    purge_codes(m, dry)
+    if "--reject-backfill" in sys.argv:
+        reject_backfill(m, int(sys.argv[sys.argv.index("--reject-backfill") + 1]))
     m.select("INBOX")
     since = (datetime.date.today() - datetime.timedelta(days=days)).strftime("%d-%b-%Y")
     _, data = m.uid("SEARCH", None, f"SINCE {since}")

@@ -62,6 +62,10 @@ def _errors(page):
     return messages
 
 
+def challenge_present(page):
+    return any('captcha-delivery.com' in frame.url for frame in page.frames) or 'captcha-delivery.com' in page.content()
+
+
 def apply_job(page, job, prof, bank, dry=False):
     apply.US_CITIZEN = bool(prof.get('us_citizen'))
     apply._set_current_job(job)
@@ -76,14 +80,19 @@ def apply_job(page, job, prof, bank, dry=False):
                 pass
             for step in range(8):
                 page.wait_for_timeout(500)
+                if challenge_present(page):
+                    missing.append('CAPTCHA challenge visible')
+                    break
                 if _visible(page.locator('iframe[title*="captcha" i], iframe[src*="/bframe"], .h-captcha iframe[title*="checkbox" i]')):
                     missing.append('CAPTCHA challenge visible')
                     break
                 if not page.locator('form').count():
-                    start = page.get_by_role('button', name=re.compile(r'^(?:apply|apply now|start application)$', re.I))
+                    start = page.get_by_role('button', name=re.compile(r'^(?:apply|apply now|start application|i.m interested)$', re.I))
                     if _visible(start):
                         start.first.click()
                         continue
+                    missing.append('Application form unavailable')
+                    break
                 page_results, page_fields, blockers = fill_page(page, job, prof, bank)
                 results.extend(page_results)
                 fields.extend(page_fields)

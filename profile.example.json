@@ -16,6 +16,10 @@
     "process"
   ],
   "minimum_score": 7,
+  "min_fit": 66,
+  "remote_min_fit": 58,
+  "min_salary": 80000,
+  "employer_link_budget_seconds": 300,
   "employment": {
     "company": "Example Co",
     "title": "Manager",
@@ -79,5 +83,7 @@
   "timezone": "any",
   "disqualifiers": {
     "active security clearance": 20
-  }
+  },
+  "agency_daily_cap": 2,
+  "past_employers": []
 }

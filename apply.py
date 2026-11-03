@@ -94,6 +94,11 @@ def log(msg):
         f.write(line + "\n")
 
 
+def attachment_details(value):
+    path = Path(value).expanduser().resolve()
+    return f'{path} ({path.stat().st_size} bytes, file={path.is_file()})'
+
+
 def get_json(url):
     with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=20) as r:
         return json.load(r)
@@ -122,6 +127,7 @@ def db():
         except FileExistsError:
             pass
     conn = sqlite3.connect(DB)
+    conn.create_function('salary_max', 1, posted_salary_max)
     state.migrate(conn)
     conn.execute("CREATE TABLE IF NOT EXISTS jobs (url TEXT PRIMARY KEY, company TEXT, title TEXT, location TEXT, description TEXT, "
                  "score INTEGER, status TEXT DEFAULT 'new', updated TEXT DEFAULT CURRENT_TIMESTAMP, fit REAL DEFAULT 0, "
@@ -144,6 +150,30 @@ def followup_days():
 
 # ---------------------------------------------------------------- discovery
 SAL_RE = re.compile(r"(?:US)?\$\s?\d{2,3}(?:,\d{3}|[kK])(?:\.\d+)?\s?(?:-|–|—|to)\s?(?:US)?\$?\s?\d{2,3}(?:,\d{3}|[kK])(?:\.\d+)?")
+
+PAY_AMOUNT = re.compile(r'(?:USD\s*|\$\s*)(\d+(?:\.\d+)?\s*[kK]|\d{1,3}(?:,\d{3})*(?:\.\d+)?)', re.I)
+
+
+def posted_salary_max(salary):
+    """Highest explicitly posted annual USD pay; unknown pay is unrestricted."""
+    text = str(salary or '')
+    if not text or text.lower().startswith('est.'):
+        return None
+    amounts = []
+    for match in PAY_AMOUNT.finditer(text):
+        token = match.group(1).replace(',', '').replace(' ', '')
+        value = float(token[:-1]) * 1000 if token.lower().endswith('k') else float(token)
+        tail = text[match.end():match.end() + 30].lower()
+        if re.search(r'(?:/\s*(?:hr|hour)|per[ -]?hour|hourly)', tail):
+            value *= 2080
+        elif value < 1000 and re.search(r'(?:/\s*(?:hr|hour)|per[ -]?hour|hourly)', text, re.I):
+            value *= 2080
+        if 10000 <= value <= 1000000:
+            amounts.append(int(value))
+    if re.search(r'\bUSD\b', text, re.I):
+        for match in re.finditer(r'[-–—]\s*(\d{2,3}(?:,\d{3})+(?:\.\d+)?)', text):
+            amounts.append(int(float(match.group(1).replace(',', ''))))
+    return max(amounts) if amounts else None
 
 
 def salary_from(text):
@@ -200,6 +230,7 @@ def get_json_h(url):
         return json.load(r)
 
 
+AGENCY_SOURCES = ("roberthalf", "michaelpage", "adecco")  # staffing agencies: top N per agency per day, see agencies.py
 LEAD_SOURCES = ("workday", "icims", "adzuna", "remotive", "himalayas", "usajobs")  # Account sources are routed separately when enabled
 KEYS_FILE = Path.home() / ".config" / "remote_apply" / "keys.env"
 ADZUNA_CALLS = {"n": 0}
@@ -231,7 +262,7 @@ def _miles(la, lo):
                                            math.cos(math.radians(la)) * math.sin(math.radians(lo - HOME[1]) / 2) ** 2))
 
 
-ATS_SOURCES = ('greenhouse', 'lever', 'ashby', 'workday', 'workable', 'smartrecruiters', 'icims')
+ATS_SOURCES = ('greenhouse', 'lever', 'ashby', 'workday', 'workable', 'smartrecruiters', 'icims', 'eightfold', 'microsoft')
 
 
 def ats_source(url):
@@ -313,7 +344,7 @@ def existing_ats_url(conn, url, exclude=None):
     if not url:
         return None
     canonical = state.normalize_url(url)
-    for old_url, apply_url in conn.execute("SELECT url,apply_url FROM jobs WHERE source IN ('greenhouse','lever','ashby','workday','workable','smartrecruiters','icims')"):
+    for old_url, apply_url in conn.execute("SELECT url,apply_url FROM jobs WHERE source IN ('greenhouse','lever','ashby','workday','workable','smartrecruiters','icims','eightfold','microsoft')"):
         if old_url != exclude and canonical in (state.normalize_url(old_url), state.normalize_url(apply_url)):
             return old_url
     return None
@@ -552,6 +583,19 @@ def fetch_usajobs(keys, cfg):
 
 def fetch_jobs(boards):
     keys = load_keys()
+    microsoft_cfg = boards.get('microsoft')
+    if microsoft_cfg and microsoft_cfg.get('enabled', True):
+        import eightfold
+        try:
+            yield from eightfold.fetch_eightfold('Microsoft', microsoft_cfg, source='microsoft')
+        except Exception as e:
+            log(f'fetch failed Microsoft Eightfold: {str(e)[:120]}')
+    for name, cfg in boards.get('eightfold', {}).items():
+        import eightfold
+        try:
+            yield from eightfold.fetch_eightfold(name, cfg)
+        except Exception as e:
+            log(f'fetch failed {name} Eightfold: {str(e)[:120]}')
     if boards.get('remotive', {}).get('enabled'):
         try:
             yield from fetch_remotive(boards['remotive'])
@@ -567,6 +611,9 @@ def fetch_jobs(boards):
             yield from fetch_usajobs(keys, {**boards.get("usajobs", {}), **(_PROFILE.get("usajobs") or {})})
         except Exception as e:
             log(f"fetch failed usajobs: {str(e)[:120]}")
+    if boards.get("agencies"):
+        import agencies
+        yield from agencies.fetch(boards, log, wanted=lambda t: bool(role_ok(t) and TRACK_TITLE.search(t)))
     if boards.get("adzuna") and keys.get("ADZUNA_APP_ID") and keys.get("ADZUNA_APP_KEY"):
         try:
             yield from fetch_adzuna(boards["adzuna"], keys, boards["adzuna"].get("radius_miles", 40), boards["adzuna"].get("max_calls", 20))
@@ -720,6 +767,25 @@ def mark_overlevel_jobs(conn):
 
 REMOTE = re.compile(r"remote|work from anywhere|work from home|distributed", re.I)
 BAD_LOC = re.compile(r"hybrid|on-?site|in-office|in office", re.I)
+NON_ENGLISH_TITLE = re.compile(r'\b(?:bilingual|multilingual|german|japanese|spanish|french|mandarin|chinese|korean|arabic|portuguese|italian|hindi|russian|dutch|polish)\b', re.I)
+
+
+def remote_listing(location):
+    return bool(REMOTE.search(location or '') and not BAD_LOC.search(location or ''))
+
+
+def fit_floor(location, profile):
+    return profile.get('remote_min_fit', profile.get('min_fit', 60)) if remote_listing(location) else profile.get('min_fit', 60)
+
+
+def eligible_job(job, profile):
+    salary_max = posted_salary_max(job['salary'])
+    title = job['title'] or ''
+    return ((job['fit'] or 0) >= fit_floor(job['location'], profile)
+            and (salary_max is None or salary_max >= profile.get('min_salary', 0))
+            and not NON_ENGLISH_TITLE.search(title)
+            and not any(term in title.lower() for term in BAD_TITLE)
+            and role_ok(title) and not overlevel_title(title))
 US_OK = re.compile(r"united states|\busa\b|\bu\.s\.|\bus\b|americas|north america|anywhere|worldwide" + "".join(rf"|\b{re.escape(s)}\b" for s in HOME_STATES if len(s) > 2), re.I)
 BAD_TITLE = ("machine learning engineer", "ml engineer", "data engineer", "security engineer", "fullstack", "full stack", "full-stack",
              "ios ", "android", "firmware", "scientist", "engineering manager", "hr business partner", "people business partner",
@@ -842,6 +908,8 @@ def _discovery_budget(conn, company, profile):
 
 def scan():
     profile, boards = json.loads(CONFIG.read_text()), json.loads(BOARDS.read_text())
+    boards.setdefault('microsoft', {'base_url': 'https://apply.careers.microsoft.com',
+                                     'domain': 'microsoft.com'})
     eu = {ckey(n) for n in boards.get("europe_hq", [])}
     ca = {ckey(n) for n in boards.get("canada_hq", [])}
     n = 0
@@ -876,14 +944,16 @@ def scan():
             conn.execute("INSERT INTO jobs (url,company,title,location,description,score,source,hq,salary,token,job_id,apply_url,found_at,posted_at) "
                          "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,date('now','localtime'),?) ON CONFLICT(url) DO UPDATE SET description=excluded.description, "
                          "posted_at=CASE WHEN jobs.posted_at='' THEN excluded.posted_at ELSE jobs.posted_at END, "
-                         "score=excluded.score, salary=excluded.salary, location=excluded.location, apply_url=excluded.apply_url, updated=CURRENT_TIMESTAMP",
+                         "score=excluded.score, salary=excluded.salary, location=excluded.location, "
+                         "apply_url=CASE WHEN jobs.notes LIKE 'employer link found via %' THEN jobs.apply_url ELSE excluded.apply_url END, "
+                         "updated=CURRENT_TIMESTAMP",
                          (job["url"], job["company"], job["title"], job["location"], job["description"], pts, job["source"],
                           hq, job["salary"], job["token"], job["job_id"], job["apply_url"], job.get("posted_at", "")))
             if job['source'] in ATS_SOURCES:
                 conn.execute("UPDATE jobs SET source=?, apply_url=?, status='new', notes='' WHERE url=? AND source IN ('adzuna','remotive','himalayas') AND status IN ('manual','needs_you','new')",
                              (job['source'], job['apply_url'], job['url']))
             if status == 'manual':
-                conn.execute("UPDATE jobs SET status='manual', notes=? WHERE url=? AND status IN ('new','needs_you')",
+                conn.execute("UPDATE jobs SET status='manual', notes=? WHERE url=? AND source IN ('adzuna','remotive','himalayas') AND status IN ('new','needs_you')",
                              (f"{job['source'].title()} lead: apply yourself", job['url']))
             n += 1
         refresh_adzuna_jobs(conn)
@@ -894,16 +964,33 @@ def scan():
         conn.execute("UPDATE jobs SET score = score + 8 WHERE lower(title) GLOB '*contract*' OR lower(title) GLOB '*temporary*' "
                      "OR lower(title) GLOB '*freelance*' OR lower(title) GLOB '*1099*' OR lower(substr(description,1,3000)) GLOB '*contract-to-hire*' "
                      "OR lower(substr(description,1,3000)) GLOB '*contract to hire*' OR lower(substr(description,1,3000)) GLOB '*-month contract*'")  # contract roles first
-        conn.execute("UPDATE jobs SET status='low_fit' WHERE status='new' AND fit < ?", (floor,))
+        remote_floor = profile.get('remote_min_fit', floor)
+        min_salary = profile.get('min_salary', 0)
+        conn.create_function('is_remote_listing', 1, lambda location: int(remote_listing(location)))
+        floor_sql = "CASE WHEN is_remote_listing(location) THEN ? ELSE ? END"
+        conn.execute("UPDATE jobs SET status='low_fit' WHERE status='new' AND fit < " + floor_sql, (remote_floor, floor))
         # Leads (Adzuna, Remotive, Himalayas) skip the browser, but still have to clear the fit floor to reach the manual list.
-        conn.execute("UPDATE jobs SET status='low_fit' WHERE status='manual' AND source IN ('adzuna','remotive','himalayas') AND fit < ?", (floor,))
-        conn.execute("UPDATE jobs SET status='new' WHERE status='low_fit' AND fit >= ?", (floor,))
+        conn.execute("UPDATE jobs SET status='low_fit' WHERE status='manual' AND source IN ('adzuna','remotive','himalayas') AND fit < " + floor_sql, (remote_floor, floor))
+        conn.execute("UPDATE jobs SET status='new', notes='' WHERE status='low_fit' AND notes != 'overlevel' AND fit >= " + floor_sql + " AND (salary_max(salary) IS NULL OR salary_max(salary) >= ?)", (remote_floor, floor, min_salary))
         ai_floor = profile.get("ai_min_fit", floor - 6)
-        for url, title in conn.execute("SELECT url, title FROM jobs WHERE status='low_fit' AND fit >= ?", (ai_floor,)).fetchall():
+        for url, title in conn.execute("SELECT url, title FROM jobs WHERE status='low_fit' AND fit >= ? AND notes != 'pay below floor' AND (salary_max(salary) IS NULL OR salary_max(salary) >= ?)", (ai_floor, min_salary)).fetchall():
             if AI_ROLE.search(title or "") and AI_ROLE_KIND.search(title or "") and role_ok(title) \
                     and not any(t in (title or "").lower() for t in BAD_TITLE):
                 conn.execute("UPDATE jobs SET status='new' WHERE url=?", (url,))
+        conn.execute("UPDATE jobs SET status='low_fit', notes='pay below floor' WHERE status IN ('new','ready','manual') AND salary_max(salary) < ?", (min_salary,))
+        for url, title in conn.execute("SELECT url,title FROM jobs WHERE status IN ('new','ready')").fetchall():
+            if NON_ENGLISH_TITLE.search(title or ''):
+                conn.execute("UPDATE jobs SET status='low_fit', notes='language requirement' WHERE url=?", (url,))
         mark_overlevel_jobs(conn)
+        import employer_link
+        link_result = employer_link.Finder(conn, boards, profile,
+                                          budget=profile.get('employer_link_budget_seconds', 300)).run()
+        log(f"employer links: {link_result['found']} found, {link_result['missed']} missed, "
+            f"{link_result['unavailable']} unavailable, {link_result['duplicate']} duplicate")
+        conn.execute("UPDATE jobs SET status='needs_you', notes='Microsoft account sign-in needed (one-time)' "
+                     "WHERE source='microsoft' AND status='new'")
+        conn.execute("UPDATE jobs SET status='needs_you', notes='Eightfold account sign-in needed' "
+                     "WHERE source='eightfold' AND status='new'")
         good = conn.execute("SELECT count(*) FROM jobs WHERE fit >= ?", (floor,)).fetchone()[0]
         try:
             import signals
@@ -989,6 +1076,10 @@ def restricted(text):
 
 def resolve(label, prof, bank, company):
     l = strip_label(label)
+    if EMPLOYER_HISTORY_Q.search(l):
+        if any(ckey(name) in ckey(l) or ckey(company) == ckey(name) for name in past_employers(prof)):
+            return ''
+        return 'No'
     if COMP_Q.search(l) and not COMP_ACCEPT.search(l):
         return comp_answer(CURRENT_JOB)
     if ai_notice_only(l):
@@ -1002,7 +1093,23 @@ def resolve(label, prof, bank, company):
             if re.search(pat, l, re.I) and prof.get(key):
                 return prof[key]
     with db() as conn:
+        if prof.get('us_citizen') and re.search(r'spon(?:sor|or)|work authori[sz]ation', l, re.I):
+            approved = answer_store.resolve(conn, 'sponsor', company)[0]
+            if approved:
+                return 'No' if re.search(r'spon(?:sor|or)', l, re.I) else 'Yes'
         return answer_store.resolve(conn, l, company)[0]
+
+
+def past_employers(prof):
+    """Employers the user has worked for: profile.json past_employers, else the companies in resume_facts.json."""
+    if (prof or {}).get('past_employers'):
+        return tuple(prof['past_employers'])
+    try:
+        jobs = json.loads((ROOT / 'resume_facts.json').read_text()).get('jobs') or {}
+        return tuple(v[1] for v in jobs.values() if isinstance(v, (list, tuple)) and len(v) > 1 and v[1])
+    except Exception:
+        return ()
+EMPLOYER_HISTORY_Q = re.compile(r'\b(?:previously\s+(?:worked|been employed|consulted)|ever\s+(?:worked|been employed|consulted)|been employed\s+(?:at|by)|consulted\s+for\s+.*previously|former\s+.*employee|employee\s+of\s+.*(?:currently|previously)|worked\s+(?:at|for)\s+.*before)\b', re.I)
 
 
 
@@ -1092,7 +1199,7 @@ OPTION_ALIASES = (
 )
 
 
-OPTION_CLAIMS = re.compile(r"visa|citizen|green card|permanent resident|\bresident\b|sponsor|authori[sz]|clearance|"
+OPTION_CLAIMS = re.compile(r"visa|citizen|green card|permanent resident|\bresident\b|spon(?:sor|or)|authori[sz]|clearance|"
                            r"degree|diploma|licen[sc]e|certif|disab|veteran|convict|criminal|felony|\d+\+? ?years?", re.I)
 
 
@@ -1109,6 +1216,10 @@ def pick_option(answer, options):
     if answer.startswith("__salary__:"):
         return _pick_salary_bracket(int(answer.split(":", 1)[1]), options)
     a = answer.strip().lower()
+    if a in ('master', "master's degree", 'mba'):
+        graduate = [o for o in options if re.search(r"master(?:'s|’s)?(?: degree)?|\bmba\b|master of business administration", o, re.I)]
+        if len(graduate) == 1:
+            return graduate[0]
     pats = {"__decline__": ["decline", "i don't wish", "i do not wish", "i do not want to answer", "i don't want to answer", "prefer not", "choose not"],
             "__agree__": ["i agree", "agree", "yes", "i acknowledge", "acknowledge", "acknowledged", "i consent", "consent",
                           "confirmed", "i confirm", "confirm", "i accept", "accept", "accepted", "i understand", "understood",
@@ -1160,8 +1271,9 @@ def _sponsor_option(a, options):
     US citizen can truthfully pick the one option saying no sponsorship is needed, when the others say it is."""
     if a not in ("yes", "no") or not US_CITIZEN:
         return None
-    ok = [o for o in options if NO_SPONSOR.search(o) and not NEED_SPONSOR.search(o)]
-    if len(ok) == 1 and any(NEED_SPONSOR.search(o) for o in options if o != ok[0]):
+    ok = [o for o in options if (NO_SPONSOR.search(o) or re.search(r'\b(?:US|U\.S\.|United States) citizen\b|\bpermanent(?:ly)? authori[sz]ed\b', o, re.I))
+          and not re.search(r'temporary visa|hold a visa|visa status|not currently authori[sz]ed', o, re.I)]
+    if len(ok) == 1 and (len(options) == 2 or any(NEED_SPONSOR.search(o) for o in options if o != ok[0])):
         return ok[0]
     return None
 
@@ -1424,6 +1536,7 @@ def gh_fill(page, actions, tolerant=False):
             if kind == "file":
                 box = page.locator(f"input[type=file][id='{name}'], input[type=file][name='{name}']")
                 box = box.first if box.count() else page.locator("input[type=file]").first
+                log(f"upload file: {attachment_details(val)}")
                 box.set_input_files(val)
                 ok = _read_back(box, kind, val)
             else:
@@ -1637,6 +1750,7 @@ def generic_fill(page, actions, tolerant=False):
         try:
             box = page.locator(f"[data-ra='{i}']").first
             if kind == "file":
+                log(f"upload file: {attachment_details(val)}")
                 box.set_input_files(val)
                 page.wait_for_timeout(2500)
             elif kind == "text":
@@ -1908,6 +2022,9 @@ def process(job, prof, bank, submit, ctx, selector_timeout=25000, confirmation_t
         import workday
         # run() passes a BrowserContext; give apply_job a page so it returns (status, note)
         return workday.apply_job(ctx.new_page() if not hasattr(ctx, 'goto') else ctx, job, prof, bank, submit)
+    if job.get('source') in AGENCY_SOURCES:
+        import agencies
+        return 'needs_you', f"{agencies.lead_note()} | {prepare_lead(job, prof)}"
     if job.get('source') in LEAD_SOURCES:
         return ('manual' if job.get('source') in ('adzuna', 'remotive', 'himalayas') else 'needs_you'), prepare_lead(job, prof)
     with db() as conn:
@@ -2351,8 +2468,8 @@ def company_submissions(conn, window_days=30):
 def company_cap_reason(k, recent, tonight, prof):
     """Why this company must wait, or '' if a submission is allowed."""
     per_night = prof.get("company_per_night", 1)
-    per_window = prof.get("company_per_window", 2)
-    window = prof.get("company_window_days", 30)
+    per_window = 15 if k == cap_key('Microsoft') else prof.get("company_per_window", 2)
+    window = 30 if k == cap_key('Microsoft') else prof.get("company_window_days", 30)
     if tonight.get(k, 0) >= per_night:
         return f"company cap: {per_night} per night"
     if recent.get(k, 0) >= per_window:
@@ -2387,12 +2504,16 @@ def reconcile_blockers(conn, prof):
 
 def application_candidates(conn, min_fit):
     """Retry jobs once their open blockers are gone, including jobs without an attempt."""
-    return conn.execute("""SELECT * FROM jobs WHERE fit >= ? AND
+    profile = min_fit if isinstance(min_fit, dict) else {'min_fit': min_fit}
+    cursor = conn.execute("""SELECT * FROM jobs WHERE source NOT IN ('eightfold','microsoft') AND
         (status IN ('new','ready') OR (status='needs_you' AND NOT EXISTS
         (SELECT 1 FROM blockers b JOIN attempts a ON a.id=b.attempt_id
          WHERE a.job_url=jobs.url AND b.status='open')))
         ORDER BY CASE WHEN source IN ('greenhouse','lever','ashby','workday','workable','smartrecruiters','icims') THEN 0 ELSE 1 END,
-                 coalesce(fit,0) DESC, score DESC, found_at DESC""", (min_fit,)).fetchall()
+                 coalesce(fit,0) DESC, score DESC, found_at DESC""")
+    names = [col[0] for col in cursor.description]
+    rows = cursor.fetchall()
+    return [row for row in rows if eligible_job(dict(zip(names, row)), profile)]
 
 
 def close_404_postings(conn):
@@ -2402,6 +2523,16 @@ def close_404_postings(conn):
             SELECT 1 FROM attempts a JOIN field_results f ON f.attempt_id=a.id
             WHERE a.job_url=jobs.url AND f.field_key='__form__'
               AND f.error LIKE 'Automation error: HTTP Error 404%')""").rowcount
+    conn.commit()
+    return changed
+
+
+def retry_form_timeouts(conn):
+    """One-time retry of old selector failures after adapter fixes."""
+    changed = conn.execute("""UPDATE jobs SET status='new', notes='', updated=CURRENT_TIMESTAMP
+        WHERE status='needs_you' AND source IN ('smartrecruiters','ashby')
+          AND notes LIKE '%Page.wait_for_selector: Timeout 25000ms exceeded%'
+          AND notes NOT LIKE '%stale: posting removed%'""").rowcount
     conn.commit()
     return changed
 
@@ -2441,10 +2572,10 @@ def run(dry=False):
             conn.row_factory = sqlite3.Row
             import plan
             sigs = company_sigs(conn)
-            cands = [dict(r) for r in conn.execute("SELECT * FROM jobs WHERE status IN ('new','ready','needs_you','staged') AND fit >= ? "
-                                                   "AND coalesce(ghost,0) < ? ORDER BY CASE WHEN source IN "
+            cands = [dict(r) for r in conn.execute("SELECT * FROM jobs WHERE source NOT IN ('eightfold','microsoft') AND status IN ('new','ready','needs_you','staged') "
+                                                   "AND source NOT IN ('roberthalf','michaelpage','adecco') AND coalesce(ghost,0) < ? ORDER BY CASE WHEN source IN "
                                                    "('greenhouse','lever','ashby','workday','workable','smartrecruiters','icims') THEN 0 ELSE 1 END, fit DESC",
-                                                   (prof.get("min_fit", 66), prof.get("max_ghost", 70))).fetchall()]
+                                                   (prof.get("max_ghost", 70),)).fetchall() if eligible_job(r, prof)]
             for j in cands:
                 j["value"] = plan.value(j, sigs.get(j["company"]), prof)
                 conn.execute("UPDATE jobs SET value=? WHERE url=?", (j["value"], j["url"]))
@@ -2472,10 +2603,13 @@ def run(dry=False):
     with db() as conn:
         retired = close_404_postings(conn)
         reopened = reconcile_blockers(conn, prof)
+        retried = retry_form_timeouts(conn)
     if retired:
         log(f"closed: {retired} missing postings (HTTP 404)")
     if reopened:
         log(f"reconcile: {reopened} answer blockers now resolve; their jobs re-enter the queue")
+    if retried:
+        log(f"retry: {retried} application form timeouts re-enter the queue")
     with db() as conn, sync_playwright() as pw:
         conn.row_factory = sqlite3.Row
         sent = conn.execute("SELECT count(*) FROM jobs WHERE status IN ('applied','unconfirmed') AND applied_at=date('now','localtime')").fetchone()[0]
@@ -2485,10 +2619,20 @@ def run(dry=False):
         claimed = {ckey(r["company"]): r["url"] for r in conn.execute(
             f"SELECT company,url FROM jobs WHERE status IN ({','.join('?'*len(CLAIMED))})", CLAIMED)}
         recent = company_submissions(conn, prof.get("company_window_days", 30))
+        recent[cap_key('Microsoft')] = company_submissions(conn, 30).get(cap_key('Microsoft'), 0)
         tonight = company_submissions(conn, 0)  # already submitted today counts toward the per-night cap
         deferred = set()
-        for job in application_candidates(conn, prof.get('min_fit', 66)):
-            job = dict(job)
+        candidates = [dict(job) for job in application_candidates(conn, prof)]
+        import agencies
+        agency_jobs = [j for j in candidates if j["source"] in AGENCY_SOURCES and not overlevel_title(j["title"]) and role_ok(j["title"])]
+        for job in agencies.daily_picks(agency_jobs, conn, prof.get("agency_daily_cap", 2)):
+            status, note = process(job, prof, bank, submit, ctx)
+            conn.execute("UPDATE jobs SET status=?, notes=?, updated=CURRENT_TIMESTAMP WHERE url=?", (status, note, job["url"]))
+            conn.commit()
+            log(f"{status:12} {job['company']} - {job['title']} (agency pick, fit {round(job.get('fit') or 0)})")
+        for job in candidates:
+            if job["source"] in AGENCY_SOURCES:
+                continue  # agencies are capped per day above, not per company
             k = ckey(job["company"])
             if overlevel_title(job["title"]):
                 conn.execute("UPDATE jobs SET status='low_fit', notes='overlevel', updated=CURRENT_TIMESTAMP WHERE url=?", (job["url"],))
@@ -2499,7 +2643,7 @@ def run(dry=False):
                 conn.commit()
                 log(f"{'skip':12} {job['company']} - {job['title']} role filter: product management, not program/ops")
                 continue
-            if prof.get("one_per_company", False) and k not in exempt and claimed.get(k, job["url"]) != job["url"]:
+            if prof.get("one_per_company", False) and k not in exempt and k != ckey('Microsoft') and claimed.get(k, job["url"]) != job["url"]:
                 conn.execute("UPDATE jobs SET status='skipped_company', updated=CURRENT_TIMESTAMP WHERE url=?", (job["url"],))
                 continue
             ck = cap_key(job["company"])
@@ -2916,6 +3060,10 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
     r = sub.add_parser("run"); r.add_argument("--dry", "--dry-run", action="store_true", help="never submit")
+    links = sub.add_parser('links', help='find employer ATS links for manual Adzuna leads')
+    links.add_argument('--limit', type=int)
+    links.add_argument('--dry', action='store_true')
+    links.add_argument('--budget', type=float, default=300, help='time budget in seconds')
     for c in ("scan", "export", "report"):
         sub.add_parser(c)
     m = sub.add_parser("mark"); m.add_argument("url")
@@ -2987,6 +3135,17 @@ def main():
     p = inc.add_parser('log'); p.add_argument('exp', type=int); p.add_argument('kind', choices=income.KINDS); p.add_argument('value', type=int); p.add_argument('--count', type=int); p.add_argument('--note', default='')
     p = inc.add_parser('publish'); p.add_argument('exp', type=int); p.add_argument('--platform', required=True); p.add_argument('--url', required=True)
     x = ap.parse_args()
+    if x.cmd == 'links':
+        import employer_link
+        with db() as conn:
+            result = employer_link.Finder(conn, json.loads(BOARDS.read_text()),
+                                          json.loads(CONFIG.read_text()), dry=x.dry,
+                                          budget=x.budget).run(limit=x.limit)
+        print(f"Employer links: {result['found']} found, {result['missed']} missed, "
+              f"{result['unavailable']} unavailable, "
+              f"{result['duplicate']} duplicate, {result['skipped']} below floor; "
+              f"{result['processed']} processed" + (' (time budget reached)' if result['budget_exhausted'] else ''))
+        return
     if x.cmd == 'income':
         try:
             income_cmd(x)

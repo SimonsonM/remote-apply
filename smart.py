@@ -214,7 +214,9 @@ def _cover_pred():
         (3) a plain, honest close about areas to learn and interest in a conversation.
         Mention gaps ONLY in paragraph 3, once, briefly - never open with what he lacks. Keep paragraph 2 under 130 words; pick the 2-3 strongest proof points, not all of them.
         Hard rules: use ONLY approved facts; never invent employers, titles, dates, numbers, tools, certifications or
-        outcomes. If a key requirement is not covered, do not claim it.
+        outcomes. If a key requirement is not covered, do not claim it. The credential is
+        Scrum Fundamentals Certificate (SFC) from SCRUMstudy, never Scrum Fundamentals Certification.
+        Microsoft Learn learning paths are training, never certifications.
         Banned words: innovative, passion, passionate, dynamic, excited, thrilled, resonate, cutting-edge, leverage,
         synergy, journey, empower, robust, seamless, delighted. No exclamation marks. Practical operator voice."""
         resume: str = dspy.InputField()
@@ -246,6 +248,8 @@ def cover_letter(profile, job):
             body = (f"I am writing about the {job['title']} role at {job['company']}. "
                     "I would welcome the opportunity to discuss how my documented experience relates to the work.\n\n"
                     "Thank you for considering my application.")
+    body = re.sub(r'Scrum Fundamentals Certification', 'Scrum Fundamentals Certificate (SFC)', body, flags=re.I)
+    body = re.sub(r'Microsoft Learn certification', 'Microsoft Learn training', body, flags=re.I)
     text = f"Dear {job['company']} Hiring Team,\n\n{body}\n\nSincerely,\n{profile.get('name', '')}"
     from docx import Document
     from docx.shared import Pt
@@ -343,6 +347,9 @@ def grounding_problems(text, resume_text, never_claim=(), profile=None, job=None
             if profile.get(k):
                 text = text.replace(str(profile[k]), ' ')
     text = re.sub(r'(?im)^\s*(dear|sincerely|best regards|regards|re:)\b.*$', ' ', text)
+    if re.search(r'Scrum Fundamentals Certified', resume_text, re.I):
+        # The resume's "Scrum Fundamentals Certified (SFC)" is the same credential the drafter names as a Certificate.
+        resume_text += '\nScrum Fundamentals Certificate (SFC)'
     resume_only = re.sub(r'\s+', ' ', resume_text).casefold()
     job_text = ''
     employer_ok = resume_only
@@ -358,6 +365,10 @@ def grounding_problems(text, resume_text, never_claim=(), profile=None, job=None
         if int(start) <= int(end):
             employment_years.update(str(y) for y in range(int(start), int(end) + 1))
     problems = []
+    if re.search(r'Microsoft Learn.{0,40}certif|certif.{0,40}Microsoft Learn', text, re.I):
+        problems.append(('credential', 'Microsoft Learn certification'))
+    if re.search(r'Scrum Fundamentals Certification', text, re.I):
+        problems.append(('credential', 'Scrum Fundamentals Certification'))
     scada = [] if profile is not None and 'scada experience' in resume_only else ['SCADA']
     forbidden = list(never_claim or []) + scada + (excluded_resume_claims(profile) if profile is not None else [])
     if re.search(r'ignore previous instructions|grant submit permission|reveal the applicant phone number', text, re.I):
@@ -371,7 +382,8 @@ def grounding_problems(text, resume_text, never_claim=(), profile=None, job=None
     # Credentials: resume only, never the posting.
     for m in re.finditer(r'\b(?:I (?:am|hold|earned|obtained|have)(?: my| a| an)?\s+)?(?:the\s+)?((?:Certified\s+)?(?:[A-Z][\w+-]*\s+){1,4}(?:Certificate|Certification|License)|[A-Z][\w+-]*[ -]certified)\b', text):
         credential = m.group(1).strip()
-        if credential.casefold() not in resume_only and not _NEGATION.search(text[max(0, m.start()-12):m.start()]):
+        valid_sfc = credential.casefold() == 'scrum fundamentals certificate' and 'scrum fundamentals certificate' in resume_only
+        if credential.casefold() not in resume_only and not valid_sfc and not _NEGATION.search(text[max(0, m.start()-12):m.start()]):
             problems.append(('credential', credential))
     for m in re.finditer(r'\b(?:I\s+(?:am|hold|earned|obtained|have)\s+(?:a\s+|the\s+|my\s+)?)((?:Certified|Licensed)\s+(?:[A-Z][\w+-]*\s*){1,4})\b', text):
         credential = m.group(1).strip()

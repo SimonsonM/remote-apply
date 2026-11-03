@@ -161,6 +161,29 @@ function renderJobs() {
   setText('resultsText', `Showing ${number.format(Math.min(visibleLimit, jobs.length))} of ${number.format(jobs.length)} matching jobs`);
 }
 
+function renderOutcomes(data) {
+  const o = data.outcomes || {};
+  const n = (v) => number.format(v || 0);
+  const pct = (v) => `${(v || 0).toFixed(1)}%`;
+  setText('outSubmitted', n(o.submitted));
+  setText('outRejected', n(o.rejected));
+  setText('outRejectedNote', `${pct(o.rejected_pct)} of applied · ${n(o.rejected_week)} this week`);
+  setText('outResponse', pct(o.response_pct));
+  setText('outResponseNote', `${n(o.responded)} heard back`);
+  setText('outInterviews', n(o.interviews));
+  setText('outInterviewsNote', `${pct(o.interview_pct)} of applied`);
+  setText('outAwaiting', n(o.awaiting));
+  setText('outAwaitingNote', `${pct(o.awaiting_pct)} · ${n(o.no_reply_30d)} silent 30+ days`);
+  const bar = $('outcomeBar');
+  bar.replaceChildren();
+  for (const [value, color] of [[o.rejected_pct, '--danger'], [o.interview_pct, '--teal'], [o.awaiting_pct, '--faint']]) {
+    const seg = document.createElement('div');
+    seg.style.width = `${value || 0}%`;
+    seg.style.background = `var(${color})`;
+    bar.append(seg);
+  }
+}
+
 function render(data) {
   dashboard = data;
   const c = data.status_counts;
@@ -177,6 +200,7 @@ function render(data) {
     ? `An application run is using the database right now. Showing data from ${data.stale_since}; refresh after the run finishes.`
     : data.database_found ? 'Connected to your local applications database' : 'No applications database found yet');
   setText('updatedTime', `Updated ${new Date().toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})}`);
+  renderOutcomes(data);
   renderActivity(data);
   renderPipeline(data);
   renderJobs();

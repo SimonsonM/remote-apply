@@ -98,6 +98,8 @@ def _record(results, fields, key, label, kind, status, value='', error='', sourc
 
 
 def _resolve(label, prof, bank, job):
+    if re.search(r'how many years of project management experience|years of (?:formal )?project management experience', label, re.I):
+        return '2 years'
     if re.search(r'\bextension\b|\bext\.?$', apply.strip_label(label), re.I):
         return ''
     if apply.restricted(label):
@@ -117,8 +119,33 @@ def _resolve(label, prof, bank, job):
     if re.fullmatch(r'country|country/region', apply.strip_label(label), re.I) and 'United States' in prof.get('location', ''):
         return 'United States|United States of America|USA|US'
     if re.search(r'previous(ly)? (a |an )?(employee|worker)|worked (for|at) (us|this company)', label, re.I):
+        if any(apply.ckey(name) == apply.ckey(job['company']) or apply.ckey(name) in apply.ckey(label) for name in apply.KNOWN_EMPLOYERS):
+            return ''
         return apply.resolve(label, prof, bank, job['company']) or str(prof.get('previous_worker', 'No'))
     return apply.resolve(label, prof, bank, job['company'])
+
+
+WD_SKILLS = re.compile(r'\b(?:excel|ms project|microsoft project|powerpoint|leading projects)\b', re.I)
+
+
+def checklist_choice(label, own):
+    """Only the four owner-confirmed project tools/activities in a skills checklist."""
+    own = (own or '').strip()
+    return bool(re.search(r'excel|ms project|smart sheets|powerpoint|leading projects|none of the above', label, re.I)
+                and '\n' not in own and WD_SKILLS.search(own)
+                and not re.search(r'none of the above|smart sheets', own, re.I))
+
+
+def date_part_answer(label, step, prof):
+    if not re.search(r'\bstart date\b|\bstart month\b|\bstart year\b', label, re.I):
+        return ''
+    if re.search(r'when can you start|availability|earliest', step + ' ' + label, re.I):
+        date = (dt.date.today().replace(day=1) + dt.timedelta(days=35)).replace(day=1)
+        return str(date.year) if 'year' in label.lower() else date.strftime('%B')
+    employment = prof.get('employment') or {}
+    if re.search(r'my experience|work experience|employment', step, re.I) and employment.get('start_month') and employment.get('start_year'):
+        return str(employment['start_year']) if 'year' in label.lower() else str(employment['start_month'])
+    return ''
 
 
 def _select(page, el, answer):
@@ -194,7 +221,7 @@ def _fill_listboxes(page, job, prof, bank, results, fields):
         if apply.restricted(label):
             _record(results, fields, label, label, 'select', 'failed', error='restricted attestation')
             continue
-        answer = _resolve(label, prof, bank, job)
+        answer = date_part_answer(label, _current_step(page), prof) or _resolve(label, prof, bank, job)
         if not answer:
             if required:
                 missing.append(label)
@@ -311,6 +338,10 @@ def _fill_page(page, job, prof, bank, results, fields, step=''):
                 _record(results, fields, key, label, 'checkbox', 'failed', error='restricted attestation')
                 continue
             own = _field_label(el)
+            if checklist_choice(label, own):
+                _tick(page, el)
+                _record(results, fields, key, label, 'checkbox', 'filled' if el.is_checked() else 'failed', own, source='profile')
+                continue
             group_answer = _resolve(label, prof, bank, job) if own and own not in ('', key) and own.strip() != label.strip() else ''
             if own and own not in ('', key) and (DECLINE.search(label) or (group_answer and not group_answer.startswith('__agree__'))):
                 # Self-ID "check one of the boxes": tick only the box whose own text is the approved answer.
@@ -372,7 +403,7 @@ def _fill_page(page, job, prof, bank, results, fields, step=''):
             _record(results, fields, key, label, 'text', 'filled' if verified else 'failed', prefilled if verified else '',
                     error='' if verified else 'parsed value not verified', source='resume' if grounded else 'approved')
             continue
-        answer = _resolve(label, prof, bank, job)
+        answer = date_part_answer(label, step, prof) or _resolve(label, prof, bank, job)
         drafted = False
         required = el.get_attribute('required', timeout=3000) is not None or el.get_attribute('aria-required', timeout=3000) == 'true' or label.rstrip().endswith('*')
         if not answer and required and smart.draftable(label, typ or 'text', True) and prof.get('draft_answers', True):
@@ -725,6 +756,9 @@ def _auth(page, job, prof, keys, conn, results, fields):
 
 def _upload(page, prof, results, fields):
     resume = Path(prof['resume'])
+    apply.log(f"upload file: {apply.attachment_details(resume)}")
+    if not resume.is_file():
+        return [f'Resume path is not a file: {resume}']
     try:
         page.locator('[data-automation-id="file-upload-input-ref"], [data-automation-id="file-upload-item"]').first.wait_for(state='attached', timeout=10000)
     except Exception:

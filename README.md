@@ -10,7 +10,7 @@ It never invents qualifications or screening answers, and it never counts an app
 
 ## What it does
 
-- **Finds jobs** on Greenhouse, Lever, Ashby, Workday, Workable, SmartRecruiters and iCIMS boards, plus Adzuna and USAJobs.
+- **Finds jobs** on Greenhouse, Lever, Ashby, Workday, Workable, SmartRecruiters and iCIMS boards, plus Adzuna, USAJobs, and Microsoft Eightfold.
 - **Ranks them** by semantic fit: 60% job title against your target roles, 40% description against your resume (local embeddings via Ollama).
 - **Fills applications** with Playwright, using only answers you have reviewed and approved. Free-text questions get drafts grounded only in your resume.
 - **Flags fake or stale postings** using WARN Act layoffs, PERM labor-certification ads, posting age and reposts, and closes postings the board has removed.
@@ -41,6 +41,8 @@ Then make it yours:
 
 1. **Profile**: copy `profile.example.json` to `profile.json` and fill in your details, including the `home_area` block (home coordinates, nearby towns and an optional second metro) if you want local on-site or hybrid roles. Without it, only remote roles qualify. Never put passwords in this file.
 2. **Employers**: copy `boards.example.json` to `boards.json` and edit the company lists and Adzuna search terms.
+   Additional Eightfold employers use `"eightfold": {"Employer": {"base_url": "https://jobs.example.com", "domain": "example.com"}}`.
+   Run `./ra links --dry` to inspect employer ATS matches for manual Adzuna leads; `--limit N` and `--budget SECONDS` constrain a run.
 3. **Role filters**: the defaults target program, project, operations and AI roles. Set `title_filter` (a regex) and `exclude_titles` (a list) in `profile.json` for your field.
 4. **Timezone**: set `"timezone"` in `profile.json` to `any` (default), `eastern`, `central`, `mountain`, `arizona`, `pacific`, `alaska` or `hawaii` (EST, CST, MST, PST and similar also work). Remote jobs limited to other timezones are skipped; `any` keeps them all.
 5. **API keys**: put Adzuna, USAJobs and mail credentials in `.env`, never in the profile.

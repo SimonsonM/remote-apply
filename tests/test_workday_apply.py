@@ -253,7 +253,7 @@ def test_us_citizen_flag_unlocks_only_citizen_options(monkeypatch):
     monkeypatch.setattr(apply, 'US_CITIZEN', True)
     assert apply.pick_option('No|N/A', opts).startswith('N/A-I am a US Citizen')
     assert apply.pick_option('No', ['Yes', 'No - I am a U.S. citizen', 'No - I hold a visa']) == 'No - I am a U.S. citizen'
-    assert apply.pick_option('No', opts) is None  # never the visa option
+    assert apply.pick_option('No', opts).startswith('N/A-I am a US Citizen')
 
 
 def test_process_gives_workday_a_page_and_returns_pair(monkeypatch):

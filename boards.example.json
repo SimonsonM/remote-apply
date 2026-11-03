@@ -1,4 +1,14 @@
 {
+  "microsoft": {
+    "enabled": true,
+    "base_url": "https://apply.careers.microsoft.com",
+    "domain": "microsoft.com",
+    "queries": ["program manager", "project manager", "technical program manager", "AI operations", "customer success", "partner manager", "marketing", "security", "IT operations"],
+    "locations": ["United States", "Chicago, Illinois", "Madison, Wisconsin", "Wisconsin"],
+    "max_pages": 2
+  },
+  "eightfold": {},
+  "staffing_agencies": ["Robert Half", "Insight Global", "TEKsystems", "Kforce", "Randstad", "Khayainfotech", "Galaxy i Technologies", "Request Technology", "Apex Systems", "Motion Recruitment", "Experis", "Tata Consultancy Services"],
   "europe_hq": [
     "Canonical",
     "Elastic",
@@ -422,5 +432,12 @@
   "himalayas": {
     "enabled": true,
     "max_pages": 15
+  },
+  "agencies": {
+    "robert_half": {"enabled": true},
+    "michael_page": {"enabled": true},
+    "adecco": {"enabled": true},
+    "keywords": ["program manager", "project manager", "technical program manager", "implementation manager", "operations manager", "AI operations", "IT project manager", "marketing manager"],
+    "pages": 2
   }
 }

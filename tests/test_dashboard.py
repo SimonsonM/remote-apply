@@ -40,3 +40,11 @@ def test_missing_database_has_empty_dashboard(tmp_path):
     result = dashboard.snapshot(tmp_path / "missing.sqlite3")
     assert result["database_found"] is False
     assert result["jobs"] == []
+
+
+def test_outcomes_percentages_use_submitted_applications():
+    out = dashboard.outcomes({"applied": 6, "rejected": 3, "interview": 1, "new": 50})
+    assert out["submitted"] == 10
+    assert out["rejected_pct"] == 30.0 and out["interview_pct"] == 10.0
+    assert out["responded"] == 4 and out["response_pct"] == 40.0
+    assert dashboard.outcomes({})["response_pct"] == 0.0
