@@ -37,6 +37,9 @@ def is_job(frm, subj):
             re.search(r"(thanks? (you )?for (applying|your interest)|application for|regarding (your )?application|your application|"
                       r"your .{0,60} application|update (on|regarding) your)", subj, re.I):
         return True
+    if re.search(r"^(re:\s*)?(thanks?( you)? for (applying|your application)|thanks?( you)? for your interest in .{2,60}( - | role| position)|"
+                 r"(an )?update on your .{0,40}application|your application (to|for|with|at) )", subj, re.I):
+        return True  # recruiters writing from their own address
     return bool(ATS.search(frm) and SUBJ.search(subj)) or bool(re.search(r"(myworkday|greenhouse|lever\.co|ashbyhq|icims|smartrecruiters)", frm, re.I))
 
 
