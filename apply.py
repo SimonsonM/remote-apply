@@ -871,6 +871,31 @@ def role_ok(title):
 CONTRACT = re.compile(r"\b(contract|contractor|1099|c2h|contract[- ]to[- ]hire|temp[- ]to[- ]hire|temporary|freelance|fixed[- ]term|consultant \(contract\)|\d+[- ]month (contract|assignment))\b", re.I)
 
 
+_REQ_HERE = re.compile(r"\b(must|required to|need to|needs to|should|will need to|expected to|are required to)\s+(currently\s+)?"
+                       r"(be\s+)?(based|located|living|residing|reside|live|relocate|resident)\b"
+                       r"|\b(relocat\w+)\s+(to\s+\S+(\s+\S+){0,3}\s+)?(is\s+)?(required|mandatory|necessary)"
+                       r"|\b(based|located|residing|resident)\s+in\s+[^.;]{1,40}?\s+(is\s+)?(required|only|mandatory)"
+                       r"|\bopen\s+(only\s+)?to\s+(candidates|applicants|residents)\s+(who\s+(are|live)\s+)?(based\s+|located\s+|residing\s+)?in\b"
+                       r"|\bwilling(ness)?\s+to\s+relocate\s+to\b", re.I)
+_PAID_RELO = re.compile(r"relocation\s+(assistance|package|support|bonus|stipend|benefits?|costs?|expenses?|allowance)"
+                        r"|\b(pay|pays|cover|covers|provide|provides|offer|offers|reimburse\w*)\s+(for\s+)?(your\s+|full\s+)?relocation"
+                        r"|\b(paid|sponsored|funded)\s+relocation", re.I)
+_NO_RELO = re.compile(r"\bno\s+relocation|relocation\s+(assistance\s+|support\s+|package\s+)?(is\s+|will\s+)?not\s+"
+                      r"(be\s+)?(provided|offered|available|covered)|without\s+relocation|unable\s+to\s+(offer|provide)\s+relocation", re.I)
+
+
+def requires_relocation_abroad(job):
+    """A (remote) posting that requires living in, or moving to, a country other than the US,
+    with no paid relocation. These are dropped: moving abroad only happens if the employer pays."""
+    text = f"{job.get('title', '')}. {job.get('description', '')}"
+    hit = next((sent for sent in re.split(r"(?<=[.!?\n])\s+", text)
+                if _REQ_HERE.search(sent) and FOREIGN_COUNTRY.search(sent)
+                and not re.search(r"\b(united states|u\.s\.|usa|us-based|north america|americas|anywhere|worldwide|globally)\b", sent, re.I)), None)
+    if not hit:
+        return False
+    return not (_PAID_RELO.search(text) and not _NO_RELO.search(text))
+
+
 def score(job, profile, eu):
     title, loc, body = job["title"].lower(), job["location"], job["description"].lower()
     remote_ok = not BAD_LOC.search(loc) and REMOTE.search(loc) and (US_OK.search(loc) or profile.get("remote_anywhere", REMOTE_ANYWHERE))
@@ -880,6 +905,8 @@ def score(job, profile, eu):
         return None
     if any(t in title for t in BAD_TITLE) or not role_ok(job["title"]):
         return None
+    if requires_relocation_abroad(job):
+        return None  # must live in / move to another country, and the employer doesn't pay to relocate
     if ckey(job.get("company", "")) in {ckey(c) for c in profile.get("blocked_companies", [])}:
         return None  # e.g. Coinbase: arbitration agreement on every application
     pts = sum(5 for t in ("project manager", "program manager", "implementation", "operations", "process") if t in title)
@@ -988,6 +1015,10 @@ def scan():
             if NON_ENGLISH_TITLE.search(title or ''):
                 conn.execute("UPDATE jobs SET status='low_fit', notes='language requirement' WHERE url=?", (url,))
         mark_overlevel_jobs(conn)
+        for url, title, desc in conn.execute("SELECT url, title, description FROM jobs WHERE status IN ('new','ready','manual','needs_you')").fetchall():
+            if requires_relocation_abroad({"title": title, "description": desc}):
+                conn.execute("UPDATE jobs SET status='skip', notes='requires relocation abroad, no paid relocation', "
+                             "updated=CURRENT_TIMESTAMP WHERE url=?", (url,))
         import employer_link
         link_result = employer_link.Finder(conn, boards, profile,
                                           budget=profile.get('employer_link_budget_seconds', 300)).run()
