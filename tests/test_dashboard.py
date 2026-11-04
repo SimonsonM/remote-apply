@@ -48,3 +48,9 @@ def test_outcomes_percentages_use_submitted_applications():
     assert out["rejected_pct"] == 30.0 and out["interview_pct"] == 10.0
     assert out["responded"] == 4 and out["response_pct"] == 40.0
     assert dashboard.outcomes({})["response_pct"] == 0.0
+
+
+def test_title_family_groups_levels_and_suffixes():
+    assert dashboard.title_family("Senior Program Manager, Risk Operations (Remote)") == "Program Manager"
+    assert dashboard.title_family("Manager, Implementation Management") == "Implementation Management Manager"
+    assert dashboard.title_family("Staff Technical Program Manager - Payments") == "Technical Program Manager"

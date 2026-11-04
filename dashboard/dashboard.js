@@ -12,36 +12,60 @@ function setTheme(theme) {
   $('themeToggle').setAttribute('aria-label', `Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`);
   $('themeToggle').title = `Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`;
   try { localStorage.setItem('ra-theme', theme); } catch (_) {}
-  if (dashboard) renderPipeline(dashboard);
+  if (dashboard) { renderPipeline(dashboard); renderActivity(dashboard); }
+}
+
+const SVG = 'http://www.w3.org/2000/svg';
+function svgEl(tag, attrs = {}, parent) {
+  const el = document.createElementNS(SVG, tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  if (parent) parent.append(el);
+  return el;
+}
+const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const shade = (color, pct, to = 'black') => `color-mix(in srgb, ${color} ${pct}%, ${to})`;
+
+function columns3d(container, items, color, { height = 190, gradId = 'col' } = {}) {
+  // Isometric 3D columns: lit front, shaded left side, top cap, on a receding floor grid.
+  container.replaceChildren();
+  const W = 560, H = height, base = H - 22, top = 22, dx = -9, dy = -7;
+  const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, class: 'chart-3d', preserveAspectRatio: 'none' }, container);
+  const defs = svgEl('defs', {}, svg);
+  const grad = svgEl('linearGradient', { id: gradId, x1: 0, y1: 0, x2: 0, y2: 1 }, defs);
+  svgEl('stop', { offset: '0%', 'stop-color': color }, grad);
+  svgEl('stop', { offset: '100%', 'stop-color': shade(color, 55) }, grad);
+  const max = Math.max(1, ...items.map(i => i.count));
+  const n = items.length, slot = (W - 30) / n, w = Math.min(n > 10 ? 22 : 40, slot * 0.55);
+  svgEl('path', { d: `M20 ${base} L${W - 10} ${base} L${W - 10 + dx} ${base + dy} L${20 + dx} ${base + dy} Z`, class: 'floor' }, svg);
+  for (let g = 1; g <= 3; g++) {
+    const y = base - (base - top) * g / 3;
+    svgEl('line', { x1: 20 + dx, y1: y + dy, x2: W - 10 + dx, y2: y + dy, class: 'gridline' }, svg);
+  }
+  items.forEach((item, i) => {
+    const h = item.count ? Math.max(4, (base - top) * item.count / max) : 2;
+    const x = 20 + i * slot + (slot - w) / 2, y = base - h;
+    const g = svgEl('g', { class: 'bar3d', tabindex: 0, 'aria-label': `${item.label}: ${item.count}` }, svg);
+    svgEl('title', {}, g).textContent = `${item.label}: ${item.count}`;
+    svgEl('path', { d: `M${x} ${y} L${x + dx} ${y + dy} L${x + dx} ${base + dy} L${x} ${base} Z`, fill: shade(color, 45) }, g);
+    svgEl('rect', { x, y, width: w, height: h, fill: `url(#${gradId})` }, g);
+    svgEl('path', { d: `M${x} ${y} L${x + dx} ${y + dy} L${x + w + dx} ${y + dy} L${x + w} ${y} Z`, fill: shade(color, 70, 'white') }, g);
+    if (item.count) svgEl('text', { x: x + w / 2 + dx / 2, y: y + dy - 5, class: 'bar-value' }, g).textContent = item.count;
+    if (item.axis) svgEl('text', { x: x + w / 2, y: base + 16, class: 'bar-axis' }, g).textContent = item.axis;
+  });
 }
 
 function renderActivity(data) {
-  const chart = $('activityChart');
-  chart.replaceChildren();
-  const max = Math.max(1, ...data.activity.map(item => item.count));
-  const dates = [];
-  for (const item of data.activity) {
-    const date = new Date(`${item.date}T12:00:00`);
-    const label = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-    dates.push(label);
-    const slot = document.createElement('div');
-    slot.className = 'bar-slot';
-    slot.tabIndex = 0;
-    slot.setAttribute('aria-label', `${label}: ${item.count} recorded applications`);
-    const bar = document.createElement('div');
-    bar.className = 'bar';
-    bar.style.height = `${Math.max(3, (item.count / max) * 100)}%`;
-    const tooltip = document.createElement('span');
-    tooltip.className = 'bar-tooltip';
-    tooltip.textContent = `${label}: ${item.count}`;
-    slot.append(bar, tooltip);
-    chart.append(slot);
-  }
-  setText('activityStart', dates[0] || '—');
-  setText('activityEnd', dates.at(-1) || 'Today');
+  const items = data.activity.map(item => {
+    const label = new Date(`${item.date}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    return { label, count: item.count };
+  });
+  columns3d($('activityChart'), items, cssVar('--accent') || '#86b7ff', { gradId: 'barFront' });
+  setText('activityStart', items[0]?.label || '—');
+  setText('activityEnd', items.at(-1)?.label || 'Today');
 }
 
 function renderPipeline(data) {
+  // Tilted 3D donut: outer walls on the near half, inner walls seen through the hole, lit ring on top.
   const c = data.status_counts;
   const groups = [
     ['Manual leads', c.manual || 0, '--amber'],
@@ -49,24 +73,70 @@ function renderPipeline(data) {
     ['Verify submission', c.unconfirmed || 0, '--purple'],
     ['Applied', c.applied || 0, '--teal'],
     ['Ready / CAPTCHA', (c.staged || 0) + (c.captcha || 0), '--accent'],
-    ['Other active', (c.new || 0) + (c.ready || 0) + (c.interview || 0) + (c.offer || 0), '--muted'],
   ];
+  // Broken out like a "pie of pie": the untouched backlog dwarfs everything being worked, so it sits under the wheel.
+  const backlog = (c.new || 0) + (c.ready || 0);
+  const talking = (c.interview || 0) + (c.offer || 0);
+  if (talking) groups.push(['Interview / offer', talking, '--teal']);
   const total = groups.reduce((sum, [, count]) => sum + count, 0);
   setText('donutTotal', number.format(total));
-  const styles = getComputedStyle(document.documentElement);
-  const sections = [];
-  let offset = 0;
-  for (const [, count, variable] of groups) {
+  const host = $('pipelineDonut');
+  host.querySelector('svg')?.remove();
+  // Stepped 3D donut: every section stands a little taller than the one before it.
+  const cx = 120, cy = 96, rx = 108, ry = 56, ir = 0.5, floor = 18, step = 7;
+  const svg = svgEl('svg', { viewBox: '0 -6 240 196', class: 'donut-3d' });
+  host.prepend(svg);
+  svgEl('ellipse', { cx, cy: cy + floor + 10, rx: rx * 0.95, ry: ry * 0.7, class: 'donut-shadow' }, svg);
+  const P = (t, r = 1, dz = 0) => [cx + rx * r * Math.cos(t), cy + ry * r * Math.sin(t) + dz];
+  const fmt = ([x, y]) => `${x.toFixed(2)} ${y.toFixed(2)}`;
+  const slices = [];
+  let a = -Math.PI / 2;
+  for (const [label, count, variable] of groups) {
     if (!count || !total) continue;
-    const next = offset + count / total * 100;
-    sections.push(`${styles.getPropertyValue(variable).trim()} ${offset}% ${next}%`);
-    offset = next;
+    const b = a + count / total * Math.PI * 2;
+    slices.push({ label, count, color: cssVar(variable), a0: a, a1: b, lift: 0 });
+    a = b;
   }
-  $('pipelineDonut').style.background = sections.length ? `conic-gradient(${sections.join(',')})` : 'var(--line)';
-  $('pipelineDonut').setAttribute('aria-label', `${number.format(total)} active jobs: ${groups.map(([label, count]) => `${label} ${count}`).join(', ')}`);
+  if (!slices.length) slices.push({ label: 'None', count: 0, color: cssVar('--line'), a0: 0, a1: Math.PI * 2, lift: 0 });
+  [...slices].sort((p, q) => q.count - p.count).forEach((sl, i) => { sl.lift = i * step; });   // biggest sits lowest, each smaller one a step higher
+  const clip = (a0, a1, lo, hi) => {   // overlap of [a0,a1] with [lo,hi] (+2πk)
+    const out = [];
+    for (const k of [-2, 0, 2]) {
+      const s = Math.max(a0, lo + k * Math.PI), e = Math.min(a1, hi + k * Math.PI);
+      if (e > s) out.push([s, e]);
+    }
+    return out;
+  };
+  const arc = (t0, t1, r, dz, sweep) => `A ${rx * r} ${ry * r} 0 ${Math.abs(t1 - t0) > Math.PI ? 1 : 0} ${sweep} ${fmt(P(t1, r, dz))}`;
+  const wall = (s, e, r, top, bottom, fill, parent) =>
+    svgEl('path', { d: `M ${fmt(P(s, r, top))} ${arc(s, e, r, top, 1)} L ${fmt(P(e, r, bottom))} ${arc(e, s, r, bottom, 0)} Z`, fill }, parent);
+  const cut = (t, top, bottom, fill, parent) =>
+    svgEl('path', { d: `M ${fmt(P(t, 1, top))} L ${fmt(P(t, ir, top))} L ${fmt(P(t, ir, bottom))} L ${fmt(P(t, 1, bottom))} Z`, fill }, parent);
+  // paint far sections first so nearer, taller ones overlap them
+  const order = [...slices].sort((p, q) => Math.sin((p.a0 + p.a1) / 2) - Math.sin((q.a0 + q.a1) / 2));
+  for (const sl of order) {
+    const top = -sl.lift, bottom = floor;
+    const g = svgEl('g', { class: 'slice', tabindex: 0 }, svg);
+    svgEl('title', {}, g).textContent = `${sl.label}: ${number.format(sl.count)}`;
+    for (const [s, e] of clip(sl.a0, sl.a1, Math.PI, 2 * Math.PI)) wall(s, e, ir, top, bottom, shade(sl.color, 36), g);  // inner wall seen through the hole
+    const full = sl.a1 - sl.a0 >= Math.PI * 2 - 1e-6;
+    if (!full) {
+      cut(sl.a0, top, bottom, shade(sl.color, 48), g);   // exposed radial faces where the steps change height
+      cut(sl.a1, top, bottom, shade(sl.color, 48), g);
+    }
+    for (const [s, e] of clip(sl.a0, sl.a1, 0, Math.PI)) wall(s, e, 1, top, bottom, shade(sl.color, 60), g);       // outer wall, near half
+    const a1 = full ? sl.a1 - 1e-4 : sl.a1;
+    svgEl('path', { d: `M ${fmt(P(sl.a0, 1, top))} ${arc(sl.a0, a1, 1, top, 1)} L ${fmt(P(a1, ir, top))} ${arc(a1, sl.a0, ir, top, 0)} Z`,
+                    fill: sl.color, class: 'slice-top' }, g);
+    const mid = (sl.a0 + sl.a1) / 2;
+    g.style.setProperty('--lift-x', `${(Math.cos(mid) * 5).toFixed(1)}px`);
+    g.style.setProperty('--lift-y', `${(Math.sin(mid) * 3 - 4).toFixed(1)}px`);
+  }
+  host.setAttribute('aria-label', `${number.format(total)} active jobs: ${groups.map(([label, count]) => `${label} ${count}`).join(', ')}`);
   const legend = $('pipelineLegend');
   legend.replaceChildren();
   for (const [label, count, variable] of groups) {
+    if (!count && label === 'Interview / offer') continue;
     const row = document.createElement('div');
     row.className = 'legend-row';
     const dot = document.createElement('span');
@@ -79,6 +149,135 @@ function renderPipeline(data) {
     row.append(dot, name, value);
     legend.append(row);
   }
+  const back = document.createElement('div');
+  back.className = 'backlog';
+  const bar = document.createElement('div');
+  bar.className = 'backlog-bar bar3d-h';
+  bar.style.width = `${Math.min(100, 30 + 70 * backlog / Math.max(backlog, total * 4))}%`;
+  const txt = document.createElement('span');
+  txt.innerHTML = '';
+  txt.append(Object.assign(document.createElement('strong'), { textContent: number.format(backlog) }), ' in the backlog, not yet worked (kept out of the wheel)');
+  back.append(bar, txt);
+  legend.append(back);
+}
+
+function el(tag, cls, text) {
+  const node = document.createElement(tag);
+  if (cls) node.className = cls;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function rateTable(rows, title) {
+  const box = el('div', 'rate-table');
+  box.append(el('h3', '', title));
+  const max = Math.max(1, ...rows.map(r => r.response_pct));
+  for (const r of rows) {
+    const row = el('div', 'rate-row');
+    const bar = el('div', 'rate-bar');
+    const fill = el('i', 'bar3d-h');
+    fill.style.width = `${Math.max(2, r.response_pct / max * 100)}%`;
+    bar.append(fill);
+    row.append(el('span', 'rate-label', r.label), bar, el('strong', '', `${r.response_pct.toFixed(1)}%`), el('small', '', `${r.applied} sent`));
+    box.append(row);
+  }
+  return box;
+}
+
+function renderInsights(data) {
+  const ins = data.insights;
+  const host = $('insightsBody');
+  host.replaceChildren();
+  if (!ins) return;
+  const kpis = el('div', 'insight-kpis');
+  const kpi = (label, value, note) => { const k = el('div', 'outcome'); k.append(el('span', '', label), el('strong', '', value), el('small', '', note)); kpis.append(k); };
+  kpi('Median days to a rejection', ins.median_days_to_rejection ?? '—', ins.fastest_rejection_days != null ? `fastest: ${ins.fastest_rejection_days} days` : 'no rejections yet');
+  kpi('Silent 14+ days', number.format(ins.silent_14d), `${ins.silent_14d_pct}% of open applications`);
+  const talks = ins.by_level.reduce((n, r) => n + r.interviews, 0);
+  const pool = [...ins.by_level].filter(r => r.applied >= 10);
+  const pick = talks ? pool.sort((a, b) => b.interviews / b.applied - a.interviews / a.applied)[0]
+                     : pool.sort((a, b) => b.rejected / b.applied - a.rejected / a.applied)[0];
+  kpi(talks ? 'Best interview rate' : 'Most rejected level', pick ? pick.label : '—',
+      pick ? (talks ? `${pick.interviews} interviews from ${pick.applied}` : `${(100 * pick.rejected / pick.applied).toFixed(1)}% rejected`) : 'need 10+ applications');
+  kpis.lastChild.classList.add('text-kpi');
+  host.append(kpis);
+  // funnel
+  const funnel = el('div', 'funnel');
+  const fmax = Math.max(1, ...ins.funnel.map(f => f.count));
+  ins.funnel.forEach((f, i) => {
+    const step = el('div', 'funnel-step');
+    const bar = el('div', 'funnel-bar bar3d-h');
+    bar.style.width = `${Math.max(4, Math.sqrt(f.count / fmax) * 100)}%`;
+    bar.style.setProperty('--i', i);
+    bar.append(el('span', '', number.format(f.count)));
+    const prev = i ? ins.funnel[i - 1].count : 0;
+    step.append(el('span', 'funnel-label', f.label), bar, el('small', '', i && prev ? `${(100 * f.count / prev).toFixed(1)}% of previous` : ''));
+    funnel.append(step);
+  });
+  host.append(funnel);
+  const grid = el('div', 'rate-grid');
+  grid.append(rateTable(ins.top_titles || [], 'Most applied-for roles (response rate)'), rateTable(ins.by_level, 'Response rate by seniority'), rateTable(ins.by_source, 'By application system'),
+              rateTable(ins.by_fit, 'By match score'), rateTable(ins.by_mode, 'Remote vs local'));
+  host.append(grid);
+  const foot = el('div', 'insight-foot');
+  const wd = el('div', 'weekday');
+  wd.append(el('h3', '', 'Applications by weekday'));
+  const wrow = el('div', 'weekday-chart');
+  columns3d(wrow, ins.weekdays.map(w => ({ label: w.day, axis: w.day, count: w.count })), cssVar('--purple') || '#b9a4e3', { height: 150, gradId: 'wkFront' });
+  wd.append(wrow);
+  const rej = el('div', 'rejecters');
+  rej.append(el('h3', '', 'Most rejections from'));
+  for (const r of ins.top_rejecters) {
+    const row = el('div', 'legend-row');
+    row.append(el('span', '', r.company), el('strong', '', r.count));
+    rej.append(row);
+  }
+  foot.append(wd, rej);
+  host.append(foot);
+}
+
+function renderThreats(data) {
+  const t = data.threats;
+  const host = $('threatsBody');
+  host.replaceChildren();
+  if (!t || !t.scanned) {
+    host.append(el('p', 'muted', 'The scam scanner has not run yet. It runs with the hourly mail sort.'));
+    return;
+  }
+  setText('sideThreatCount', number.format(t.high + t.suspicious));
+  const kpis = el('div', 'insight-kpis threat-kpis');
+  const kpi = (label, value, note, cls = '') => { const k = el('div', `outcome ${cls}`); k.append(el('span', '', label), el('strong', '', value), el('small', '', note)); kpis.append(k); };
+  kpi('Messages scanned', number.format(t.scanned), 'job-related mail, inbox + folders');
+  kpi('High risk', number.format(t.high), 'score 60+', t.high ? 'danger' : '');
+  kpi('Suspicious', number.format(t.suspicious), 'score 30–59', t.suspicious ? 'warn' : '');
+  kpi('Passed SPF + DKIM', `${t.scanned ? (100 * t.auth_pass / t.scanned).toFixed(1) : 0}%`, `${number.format(t.auth_weak)} with weak or failed auth`);
+  host.append(kpis);
+  if (t.countries.length) {
+    const geo = el('div', 'geo-strip');
+    geo.append(el('span', 'geo-title', 'Sending networks by country'));
+    for (const c of t.countries) geo.append(el('span', 'geo-chip', `${c.country} · ${c.count}`));
+    host.append(geo);
+  }
+  const list = el('div', 'threat-list');
+  if (!t.items.length) list.append(el('p', 'muted', 'Nothing suspicious found. Every scanned message passed.'));
+  for (const it of t.items) {
+    const card = el('article', `threat-card ${it.level}`);
+    const head = el('div', 'threat-head');
+    head.append(el('span', `threat-level ${it.level}`, `${it.level === 'high' ? 'HIGH' : 'SUSPICIOUS'} · ${it.score}`),
+                el('strong', '', it.from_addr || it.from_domain), el('small', '', (it.received_at || '').slice(0, 10)));
+    const subj = el('div', 'threat-subject', it.subject || '(no subject)');
+    const auth = el('div', 'auth-badges');
+    for (const [k, v] of [['SPF', it.spf], ['DKIM', it.dkim], ['DMARC', it.dmarc]]) {
+      auth.append(el('span', `badge ${v === 'pass' ? 'ok' : v ? 'bad' : 'none'}`, `${k} ${v || '—'}`));
+    }
+    if (it.ip) auth.append(el('span', 'badge info', `${it.ip}${it.ip_country ? ' · ' + it.ip_country : ''}${it.ip_org ? ' · ' + it.ip_org : ''}`));
+    if (it.domain_age_days != null) auth.append(el('span', `badge ${it.domain_age_days < 365 ? 'bad' : 'info'}`, `domain ${it.domain_age_days} days old`));
+    const why = el('ul', 'threat-reasons');
+    for (const r of it.reasons) why.append(el('li', '', r));
+    card.append(head, subj, auth, why);
+    list.append(card);
+  }
+  host.append(list);
 }
 
 function jobCard(job) {
@@ -203,6 +402,8 @@ function render(data) {
   renderOutcomes(data);
   renderActivity(data);
   renderPipeline(data);
+  renderInsights(data);
+  renderThreats(data);
   renderJobs();
 }
 
@@ -239,5 +440,18 @@ $('filters').addEventListener('click', event => {
   renderJobs();
 });
 $('backToTop').addEventListener('click', () => window.scrollTo({top:0,behavior:'smooth'}));
+
+// Each workspace is its own page; the sidebar switches between them by hash (#activity, #threats, ...).
+const PAGES = { 'overview': 'Overview', 'action-queue': 'Action queue', 'insights': 'Market insights', 'threats': 'Threats' };
+function route() {
+  const page = PAGES[location.hash.slice(1)] ? location.hash.slice(1) : 'overview';   // #activity now lives on the overview
+  document.querySelectorAll('[data-page]').forEach(node => { node.hidden = node.dataset.page !== page; });
+  document.querySelectorAll('.nav-link').forEach(a => a.classList.toggle('active', a.getAttribute('href') === `#${page}`));
+  setText('crumb', PAGES[page]);
+  document.title = `Remote Apply · ${PAGES[page]}`;
+  window.scrollTo(0, 0);
+}
+window.addEventListener('hashchange', route);
+route();
 $('loadMoreButton').addEventListener('click', () => { visibleLimit += 30; renderJobs(); });
 refresh();

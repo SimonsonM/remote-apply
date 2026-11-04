@@ -275,6 +275,12 @@ def main():
     if not dry:
         folder_rejections(m, days if "--days" in sys.argv else 14)
     m.logout()
+    if not dry:
+        try:
+            import threat_scan
+            threat_scan.scan(days=3)
+        except Exception as exc:  # the scam monitor must never stop mail filing
+            print(f"threat scan skipped: {str(exc)[:120]}")
 
 
 if __name__ == "__main__":

@@ -18,14 +18,15 @@
       <nav class="nav-list">
         <a class="nav-link active" href="#overview"><span class="nav-icon" aria-hidden="true">◫</span> Overview</a>
         <a class="nav-link" href="#action-queue"><span class="nav-icon" aria-hidden="true">◎</span> Action queue <span class="nav-count" id="sideActionCount">—</span></a>
-        <a class="nav-link" href="#activity"><span class="nav-icon" aria-hidden="true">▥</span> Activity</a>
+        <a class="nav-link" href="#insights"><span class="nav-icon" aria-hidden="true">◔</span> Market insights</a>
+        <a class="nav-link" href="#threats"><span class="nav-icon" aria-hidden="true">⚠</span> Threats <span class="nav-count threat-count" id="sideThreatCount">—</span></a>
       </nav>
       <div class="sidebar-bottom"><div class="privacy"><span class="privacy-icon">⌁</span><span><strong>Local workspace</strong><small>Read only · Your data stays here</small></span></div><div class="side-foot">REMOTE APPLY / 2026</div></div>
     </aside>
 
     <main id="overview" class="main">
       <header class="topbar">
-        <div class="breadcrumb"><span>Workspace</span><span class="slash">/</span><strong>Overview</strong></div>
+        <div class="breadcrumb"><span>Workspace</span><span class="slash">/</span><strong id="crumb">Overview</strong></div>
         <div class="top-actions"><span class="live-pill"><span class="live-dot"></span> Live database</span><button id="themeToggle" class="icon-button" type="button" aria-label="Switch to light mode" title="Toggle color mode"><span id="themeIcon" aria-hidden="true">☼</span></button></div>
       </header>
 
@@ -33,14 +34,14 @@
         <div class="page-heading"><div><p class="eyebrow">YOUR JOB SEARCH, AT A GLANCE</p><h1><span id="greeting">Welcome back</span><span id="firstName"></span><span class="heading-period">.</span></h1><p class="lead">A clear view of your progress and what needs your attention next.</p></div><button class="refresh-button" id="refreshButton" type="button"><span aria-hidden="true">↻</span> Refresh data</button></div>
         <div class="status-strip"><span class="status-led"></span><span id="dataStatus">Loading your application data…</span><span class="status-time" id="updatedTime"></span></div>
 
-        <section class="metrics" aria-label="Key statistics">
+        <section class="metrics" data-page="overview" aria-label="Key statistics">
           <article class="metric-card metric-feature"><div class="metric-top"><span>Needs your action</span><span class="metric-glyph">↗</span></div><div class="metric-value" id="metricAction">—</div><div class="metric-foot"><span class="mini-accent">NEXT UP</span><span>Applications waiting on you</span></div></article>
           <article class="metric-card"><div class="metric-top"><span>Currently applied</span><span class="metric-glyph">✦</span></div><div class="metric-value" id="metricApplied">—</div><div class="metric-foot">Confirmed applications</div></article>
           <article class="metric-card"><div class="metric-top"><span>In conversation</span><span class="metric-glyph">↗</span></div><div class="metric-value" id="metricInterviews">—</div><div class="metric-foot">Interview and offer stages</div></article>
           <article class="metric-card"><div class="metric-top"><span>Jobs tracked</span><span class="metric-glyph">▤</span></div><div class="metric-value" id="metricTracked">—</div><div class="metric-foot">Across every status</div></article>
         </section>
 
-        <section class="panel outcomes-panel" aria-label="Response statistics">
+        <section class="panel outcomes-panel" data-page="overview" aria-label="Response statistics">
           <div class="panel-heading"><div><p class="panel-kicker">OUTCOMES</p><h2>How employers are responding</h2><p>Percentages are of every application actually submitted</p></div></div>
           <div class="outcomes">
             <div class="outcome"><span>Total applied</span><strong id="outSubmitted">—</strong><small>Submitted applications</small></div>
@@ -53,12 +54,22 @@
           <div class="outcome-legend"><span><i style="background:var(--danger)"></i>Rejected</span><span><i style="background:var(--teal)"></i>Interview / offer</span><span><i style="background:var(--faint)"></i>Awaiting</span></div>
         </section>
 
-        <section id="activity" class="insights-grid" aria-label="Visual statistics">
+        <section id="activity" data-page="overview" class="insights-grid" aria-label="Visual statistics">
           <article class="panel activity-panel"><div class="panel-heading"><div><p class="panel-kicker">MOMENTUM</p><h2>Application activity</h2><p>Apply dates recorded over the last 14 days</p></div><span class="panel-pill">14 DAYS</span></div><div class="activity-chart" id="activityChart" role="img" aria-label="Application dates recorded by day"></div><div class="chart-axis"><span id="activityStart">—</span><span id="activityEnd">Today</span></div></article>
-          <article class="panel pipeline-panel"><div class="panel-heading"><div><p class="panel-kicker">PIPELINE</p><h2>Where things stand</h2><p>Applications and leads in motion</p></div></div><div class="pipeline-layout"><div class="donut" id="pipelineDonut" role="img" aria-label="Active job status distribution"><div class="donut-center"><strong id="donutTotal">—</strong><span>active jobs</span></div></div><div class="pipeline-legend" id="pipelineLegend"></div></div></article>
+          <article class="panel pipeline-panel"><div class="panel-heading"><div><p class="panel-kicker">PIPELINE</p><h2>Where things stand</h2><p>Applications and leads in motion</p></div></div><div class="pipeline-layout"><div class="donut3d" id="pipelineDonut" role="img" aria-label="Active job status distribution"><div class="donut-center"><strong id="donutTotal">—</strong><span>in motion</span></div></div><div class="pipeline-legend" id="pipelineLegend"></div></div></article>
         </section>
 
-        <section id="action-queue" class="queue-section" aria-labelledby="queueTitle"><div class="queue-heading"><div><p class="panel-kicker">YOUR NEXT MOVES</p><h2 id="queueTitle">Action queue <span id="queueCount" class="queue-title-count">—</span></h2><p>Open a listing, finish the remaining step, then record the outcome in Remote Apply.</p></div><div class="queue-heading-icon" aria-hidden="true">↗</div></div>
+        <section id="insights" data-page="insights" class="panel insights-panel" aria-label="Market insights">
+          <div class="panel-heading"><div><p class="panel-kicker">MARKET READ</p><h2>What the responses say</h2><p>Who answers, how fast, and where applications go quiet. Response = any reply, rejection included.</p></div></div>
+          <div id="insightsBody"></div>
+        </section>
+
+        <section id="threats" data-page="threats" class="panel threats-panel" aria-label="Email threats">
+          <div class="panel-heading"><div><p class="panel-kicker">THREAT WATCH</p><h2>Recruitment scam monitor</h2><p>Every job-related email is checked: sender authentication (SPF, DKIM, DMARC), the sending server's IP and network, look-alike and newly registered domains, and scam language. Monitor only, nothing is moved.</p></div><span class="panel-pill danger-pill">LIVE</span></div>
+          <div id="threatsBody"></div>
+        </section>
+
+        <section id="action-queue" data-page="action-queue" class="queue-section" aria-labelledby="queueTitle"><div class="queue-heading"><div><p class="panel-kicker">YOUR NEXT MOVES</p><h2 id="queueTitle">Action queue <span id="queueCount" class="queue-title-count">—</span></h2><p>Open a listing, finish the remaining step, then record the outcome in Remote Apply.</p></div><div class="queue-heading-icon" aria-hidden="true">↗</div></div>
           <div class="queue-toolbar"><div class="filters" id="filters" role="group" aria-label="Filter jobs by status"><button type="button" data-filter="all" class="filter active">All <span id="filterAllCount">—</span></button><button type="button" data-filter="staged" class="filter">Ready to submit <span id="filterStagedCount">—</span></button><button type="button" data-filter="captcha" class="filter">CAPTCHA <span id="filterCaptchaCount">—</span></button><button type="button" data-filter="needs_you" class="filter">Needs you <span id="filterNeedsCount">—</span></button><button type="button" data-filter="unconfirmed" class="filter">Verify <span id="filterUnconfirmedCount">—</span></button><button type="button" data-filter="manual" class="filter">Manual <span id="filterManualCount">—</span></button></div><label class="search-field"><span aria-hidden="true">⌕</span><span class="sr-only">Search jobs</span><input id="searchInput" type="search" placeholder="Search company or role" autocomplete="off"></label></div>
           <div class="queue-meta"><span id="resultsText">Loading jobs…</span><span>Sorted by stage, then fit</span></div>
           <div class="job-list" id="jobList" aria-live="polite"></div>

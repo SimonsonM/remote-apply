@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import re
 import sqlite3
 from collections import Counter
 from datetime import date, datetime, timedelta
@@ -83,13 +84,125 @@ def outcomes(counts, conn=None, today=None):
             "awaiting": applied, "awaiting_pct": pct(applied), "no_reply_30d": ghosted}
 
 
+SUBMITTED = ("applied", "rejected", "interview", "offer")
+LEVELS = (("Director / VP", r"\b(director|head of|vp|vice president|chief)\b"),
+          ("Staff / Principal / Lead", r"\b(staff|principal|lead)\b"),
+          ("Senior", r"\b(senior|sr\.?)\b"),
+          ("Manager", r"\bmanager\b"))
+REMOTE_WORDS = re.compile(r"remote|anywhere|distributed|work from home", re.I)
+
+
+def level_of(title):
+    for name, pattern in LEVELS:
+        if re.search(pattern, title or "", re.I):
+            return name
+    return "Individual contributor"
+
+
+def _rate_rows(groups):
+    rows = []
+    for label, items in groups.items():
+        sent = len(items)
+        heard = sum(1 for st in items if st in ("rejected", "interview", "offer"))
+        rows.append({"label": label, "applied": sent, "rejected": sum(1 for st in items if st == "rejected"),
+                     "interviews": sum(1 for st in items if st in ("interview", "offer")),
+                     "response_pct": round(100 * heard / sent, 1) if sent else 0.0})
+    return sorted(rows, key=lambda r: -r["applied"])
+
+
+LEVEL_WORDS = re.compile(r"\b(senior|sr|staff|principal|lead|junior|jr|associate|ii|iii|iv|i|1|2|3)\b\.?", re.I)
+
+
+def title_family(title):
+    """'Senior Program Manager, Risk Ops (Remote)' -> 'Program Manager'."""
+    parts = re.split(r"\s[-–—|]\s|,|\(|/", title or "")
+    clean = lambda t: re.sub(r"\s+", " ", LEVEL_WORDS.sub(" ", t or "")).strip(" .-:")
+    core = clean(parts[0])
+    if core.lower() in ("manager", "director", "head", "lead", "vp", "head of") and len(parts) > 1 and clean(parts[1]):
+        core = f"{clean(parts[1])} {core}"   # 'Manager, Implementation' -> 'Implementation Manager'
+    core = re.sub(r"\bof of\b", "of", core)
+    return core.title() if core else (title or "Untitled")
+
+
+SYSTEM_NAMES = {"greenhouse": "Greenhouse", "lever": "Lever", "ashby": "Ashby", "workday": "Workday", "workable": "Workable",
+                "smartrecruiters": "SmartRecruiters", "icims": "iCIMS", "eightfold": "Eightfold", "microsoft": "Microsoft Careers",
+                "adzuna": "Adzuna", "remotive": "Remotive", "himalayas": "Himalayas", "usajobs": "USAJOBS",
+                "roberthalf": "Robert Half", "michaelpage": "Michael Page", "adecco": "Adecco"}
+
+
+def _with_all_systems(rows):
+    """Every system Remote Apply can apply through or find jobs on, with zeros where nothing has gone out yet."""
+    seen = {r["label"] for r in rows}
+    return rows + [{"label": name, "applied": 0, "rejected": 0, "interviews": 0, "response_pct": 0.0}
+                   for name in SYSTEM_NAMES.values() if name not in seen]
+
+
+def insights(conn, today=None):
+    """Market read-outs from what was submitted and what came back."""
+    today = today or date.today()
+    rows = conn.execute(f"SELECT company, title, location, source, fit, status, applied_at, updated FROM jobs "
+                        f"WHERE status IN ({','.join('?' * len(SUBMITTED))}) AND applied_at != ''", SUBMITTED).fetchall()
+    by = lambda key: _rate_rows({k: [r[5] for r in rows if key(r) == k] for k in {key(r) for r in rows}})
+    band = lambda r: "70+" if (r[4] or 0) >= 70 else "65–69" if (r[4] or 0) >= 65 else "60–64" if (r[4] or 0) >= 60 else "under 60"
+    waits = sorted(max(0, (date.fromisoformat(r[7][:10]) - date.fromisoformat(r[6][:10])).days)
+                   for r in rows if r[5] == "rejected" and r[7] and r[6])
+    silent = sum(1 for r in rows if r[5] == "applied" and (today - date.fromisoformat(r[6][:10])).days >= 14)
+    applied_open = sum(1 for r in rows if r[5] == "applied")
+    weekdays = Counter(date.fromisoformat(r[6][:10]).strftime("%a") for r in rows)
+    rejecters = Counter(r[0] for r in rows if r[5] == "rejected").most_common(6)
+    discovered = conn.execute("SELECT count(*) FROM jobs").fetchone()[0]
+    qualified = conn.execute("SELECT count(*) FROM jobs WHERE coalesce(fit,0) >= 58").fetchone()[0]
+    attempted = conn.execute("SELECT count(*) FROM jobs WHERE status IN ('applied','rejected','interview','offer','unconfirmed')").fetchone()[0]
+    heard = sum(1 for r in rows if r[5] in ("rejected", "interview", "offer"))
+    talks = sum(1 for r in rows if r[5] in ("interview", "offer"))
+    return {
+        "by_level": by(lambda r: level_of(r[1])),
+        "by_source": _with_all_systems(by(lambda r: SYSTEM_NAMES.get(r[3] or "", (r[3] or "Other").title()))),
+        "by_fit": sorted(by(band), key=lambda r: r["label"], reverse=True),
+        "by_mode": by(lambda r: "Remote" if REMOTE_WORDS.search(r[2] or "") else "Local / hybrid"),
+        "funnel": [{"label": "Discovered", "count": discovered}, {"label": "Good fit", "count": qualified},
+                   {"label": "Submitted", "count": attempted}, {"label": "Heard back", "count": heard},
+                   {"label": "Interview", "count": talks}],
+        "median_days_to_rejection": waits[len(waits) // 2] if waits else None,
+        "fastest_rejection_days": waits[0] if waits else None,
+        "silent_14d": silent, "silent_14d_pct": round(100 * silent / applied_open, 1) if applied_open else 0.0,
+        "weekdays": [{"day": d, "count": weekdays.get(d, 0)} for d in ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")],
+        "top_rejecters": [{"company": c, "count": n} for c, n in rejecters],
+        "top_titles": sorted(by(lambda r: title_family(r[1])), key=lambda r: (-r["applied"], r["label"]))[:8],
+    }
+
+
+def threats(conn, days=60):
+    """Scam scanner results (threat_scan.py); empty if it has never run."""
+    if not conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='mail_threats'").fetchone():
+        return {"scanned": 0, "suspicious": 0, "high": 0, "items": [], "countries": []}
+    since = (date.today() - timedelta(days=days)).isoformat()
+    counts = dict(conn.execute("SELECT level, count(*) FROM mail_threats GROUP BY level"))
+    items = []
+    for row in conn.execute("SELECT received_at, from_addr, from_domain, reply_to, subject, ip, ip_host, ip_country, ip_org, "
+                            "spf, dkim, dmarc, domain_age_days, score, level, reasons, mailbox FROM mail_threats "
+                            "WHERE level != 'clean' ORDER BY score DESC, received_at DESC LIMIT 40"):
+        keys = ("received_at", "from_addr", "from_domain", "reply_to", "subject", "ip", "ip_host", "ip_country", "ip_org",
+                "spf", "dkim", "dmarc", "domain_age_days", "score", "level", "reasons", "mailbox")
+        item = dict(zip(keys, row))
+        item["reasons"] = json.loads(item["reasons"] or "[]")
+        items.append(item)
+    countries = [{"country": c or "?", "count": n} for c, n in conn.execute(
+        "SELECT ip_country, count(*) FROM mail_threats WHERE ip != '' GROUP BY ip_country ORDER BY count(*) DESC LIMIT 8")]
+    auth = dict(conn.execute("SELECT CASE WHEN spf='pass' AND dkim='pass' THEN 'pass' ELSE 'weak' END, count(*) FROM mail_threats GROUP BY 1"))
+    return {"scanned": sum(counts.values()), "suspicious": counts.get("suspicious", 0), "high": counts.get("high", 0),
+            "auth_pass": auth.get("pass", 0), "auth_weak": auth.get("weak", 0),
+            "recent_flags": conn.execute("SELECT count(*) FROM mail_threats WHERE level != 'clean' AND received_at >= ?", (since,)).fetchone()[0],
+            "items": items, "countries": countries}
+
+
 def snapshot(db_path=DB):
     """Build one consistent read-only view from the current jobs database."""
     today = date.today()
     days = [(today - timedelta(days=13 - i)).isoformat() for i in range(14)]
     empty = {"database_found": False, "as_of": today.isoformat(), "status_counts": {},
              "source_counts": [], "activity": [{"date": day, "count": 0} for day in days],
-             "jobs": [], "outcomes": outcomes({}),
+             "jobs": [], "outcomes": outcomes({}), "insights": None, "threats": None,
              "totals": {"tracked": 0, "action": 0, "applied": 0,
                         "interviews": 0, "offers": 0, "open_blockers": 0}}
     if not Path(db_path).is_file():
@@ -133,7 +246,7 @@ def snapshot(db_path=DB):
         return {"database_found": True, "as_of": today.isoformat(), "status_counts": counts,
                 "source_counts": source_counts,
                 "activity": [{"date": day, "count": activity_counts.get(day, 0)} for day in days],
-                "jobs": jobs, "outcomes": outcomes(counts, conn),
+                "jobs": jobs, "outcomes": outcomes(counts, conn), "insights": insights(conn), "threats": threats(conn),
                 "totals": {"tracked": sum(counts.values()), "action": len(jobs),
                            "applied": counts.get("applied", 0),
                            "interviews": counts.get("interview", 0), "offers": counts.get("offer", 0),
