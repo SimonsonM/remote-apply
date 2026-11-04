@@ -137,10 +137,67 @@ def _with_all_systems(rows):
                    for name in SYSTEM_NAMES.values() if name not in seen]
 
 
+STOP = set("""a an and are as at be by for from has have in is it its of on or our that the their this to we will with you your
+who what when where which while all any can may not more most must other such than then these they those through up
+us via was were would also about across into within per new work team role job company including include etc able strong
+experience years year looking join help using use well based skills ability best great own both each how why one two""".split())
+
+
+BOILER = set("""equal opportunity employer salary range base compensation pay bonus equity benefits benefit insurance medical dental vision
+401k 401 pto leave parental vacation holidays holiday time off sexual orientation gender identity expression race color religion
+national origin veteran status disability disabilities protected qualified applicants applicant accommodation accommodations
+age marital pregnancy genetic citizenship ancestry criminal background check privacy notice policy candidates candidate eeo
+affirmative action law laws regulations perks wellness stipend reasonable hiring location locations remote hybrid office
+offices california colorado york washington states united regard note nbsp amp interview interviews recruiting recruiter
+consideration employment please receive process apply applying application email emails fraud scam statement visit learn
+click website www com http https team members culture mission values diverse diversity inclusion inclusive belonging
+preferred qualifications qualification every day employee stock purchase san francisco quality""".split())
+
+
+def resume_text():
+    parts = []
+    for name in ("resume.md", "resume_facts.json"):
+        try:
+            parts.append((ROOT / name).read_text())
+        except OSError:
+            pass
+    return re.sub(r"[^a-z0-9+#/ ]", " ", " ".join(parts).lower())
+
+
+def keyword_gaps(rows, limit=14):
+    """Two-word phrases that recur across postings you applied to but appear nowhere in your resume text.
+    Add only the ones that are true for you."""
+    have = resume_text()
+    if not have.strip():
+        return []
+    have_words = set(have.split())
+    seen = Counter()
+    for desc in rows:
+        words = [w for w in re.sub(r"[^a-z0-9+#/ ]", " ", (desc or "").lower()).split()]
+        grams = {f"{a} {b}" for a, b in zip(words, words[1:]) if a not in STOP and b not in STOP and len(a) > 2 and len(b) > 2
+                 and a not in BOILER and b not in BOILER
+                 and not a.isdigit() and not b.isdigit()}
+        seen.update(grams)
+    n = max(1, len(rows))
+    out = []
+    for gram, count in seen.most_common(1500):
+        if count < max(3, n * 0.06) or gram in have:
+            continue
+        if all(w in have_words for w in gram.split()) and count < n * 0.15:
+            continue   # both words already there: likely phrased differently, only flag if very common
+        out.append({"phrase": gram, "pct": round(100 * count / n, 1)})
+        if len(out) >= limit:
+            break
+    return out
+
+
 def insights(conn, today=None):
     """Market read-outs from what was submitted and what came back."""
     today = today or date.today()
-    rows = conn.execute(f"SELECT company, title, location, source, fit, status, applied_at, updated FROM jobs "
+    cols = {c[1] for c in conn.execute("PRAGMA table_info(jobs)")}
+    variant_col = "resume_variant" if "resume_variant" in cols else "''"
+    posted_col = "coalesce(posted_at,'')" if "posted_at" in cols else "''"
+    rows = conn.execute(f"SELECT company, title, location, source, fit, status, applied_at, updated, {posted_col}, {variant_col} FROM jobs "
                         f"WHERE status IN ({','.join('?' * len(SUBMITTED))}) AND applied_at != ''", SUBMITTED).fetchall()
     by = lambda key: _rate_rows({k: [r[5] for r in rows if key(r) == k] for k in {key(r) for r in rows}})
     band = lambda r: "70+" if (r[4] or 0) >= 70 else "65–69" if (r[4] or 0) >= 65 else "60–64" if (r[4] or 0) >= 60 else "under 60"
@@ -148,6 +205,10 @@ def insights(conn, today=None):
                    for r in rows if r[5] == "rejected" and r[7] and r[6])
     silent = sum(1 for r in rows if r[5] == "applied" and (today - date.fromisoformat(r[6][:10])).days >= 14)
     applied_open = sum(1 for r in rows if r[5] == "applied")
+    lags = sorted(max(0, (date.fromisoformat(r[6][:10]) - date.fromisoformat(r[8][:10])).days)
+                  for r in rows if r[8] and r[6] and re.match(r"\d{4}-\d{2}-\d{2}", r[8]))
+    pretty = {"programmgmt": "Program management", "aiops": "AI operations", "itsecurity": "IT / security", "marketing": "Marketing"}
+    variants = by(lambda r: pretty.get((r[9] or "").lower(), (r[9] or "Base resume").replace("_", " ").title()))
     weekdays = Counter(date.fromisoformat(r[6][:10]).strftime("%a") for r in rows)
     rejecters = Counter(r[0] for r in rows if r[5] == "rejected").most_common(6)
     discovered = conn.execute("SELECT count(*) FROM jobs").fetchone()[0]
@@ -168,6 +229,12 @@ def insights(conn, today=None):
         "silent_14d": silent, "silent_14d_pct": round(100 * silent / applied_open, 1) if applied_open else 0.0,
         "weekdays": [{"day": d, "count": weekdays.get(d, 0)} for d in ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")],
         "top_rejecters": [{"company": c, "count": n} for c, n in rejecters],
+        "median_days_posted_to_applied": lags[len(lags) // 2] if lags else None,
+        "applied_within_2_days_pct": round(100 * sum(1 for x in lags if x <= 2) / len(lags), 1) if lags else None,
+        "by_resume": variants,
+        "keyword_gaps": keyword_gaps([r[0] for r in conn.execute(
+            "SELECT description FROM jobs WHERE status IN ('applied','rejected','interview','offer','unconfirmed') AND coalesce(fit,0) >= 62")])
+            if "description" in cols else [],
         "top_titles": sorted(by(lambda r: title_family(r[1])), key=lambda r: (-r["applied"], r["label"]))[:8],
     }
 
@@ -196,13 +263,21 @@ def threats(conn, days=60):
             "items": items, "countries": countries}
 
 
+def _outreach(conn):
+    try:
+        import outreach
+        return outreach.items(conn)
+    except Exception:
+        return []
+
+
 def snapshot(db_path=DB):
     """Build one consistent read-only view from the current jobs database."""
     today = date.today()
     days = [(today - timedelta(days=13 - i)).isoformat() for i in range(14)]
     empty = {"database_found": False, "as_of": today.isoformat(), "status_counts": {},
              "source_counts": [], "activity": [{"date": day, "count": 0} for day in days],
-             "jobs": [], "outcomes": outcomes({}), "insights": None, "threats": None,
+             "jobs": [], "outcomes": outcomes({}), "insights": None, "threats": None, "outreach": [],
              "totals": {"tracked": 0, "action": 0, "applied": 0,
                         "interviews": 0, "offers": 0, "open_blockers": 0}}
     if not Path(db_path).is_file():
@@ -246,7 +321,7 @@ def snapshot(db_path=DB):
         return {"database_found": True, "as_of": today.isoformat(), "status_counts": counts,
                 "source_counts": source_counts,
                 "activity": [{"date": day, "count": activity_counts.get(day, 0)} for day in days],
-                "jobs": jobs, "outcomes": outcomes(counts, conn), "insights": insights(conn), "threats": threats(conn),
+                "jobs": jobs, "outcomes": outcomes(counts, conn), "insights": insights(conn), "threats": threats(conn), "outreach": _outreach(conn),
                 "totals": {"tracked": sum(counts.values()), "action": len(jobs),
                            "applied": counts.get("applied", 0),
                            "interviews": counts.get("interview", 0), "offers": counts.get("offer", 0),
@@ -275,6 +350,20 @@ def _load_cache():
 
 
 class Handler(BaseHTTPRequestHandler):
+    def do_POST(self):
+        """The one write: mark an outreach draft sent or skipped (/api/outreach/<id>/<status>), same-origin only."""
+        m = re.fullmatch(r"/api/outreach/(\d+)/(sent|skipped|draft)", self.path)
+        origin = self.headers.get("Origin", "")
+        host = self.headers.get("Host", "")
+        if not m or (origin and origin != f"http://{host}"):
+            self.send_error(403)
+            return
+        import outreach
+        with sqlite3.connect(DB, timeout=10) as conn:
+            outreach.set_status(conn, int(m.group(1)), m.group(2))
+        self.send_response(204)
+        self.end_headers()
+
     def do_GET(self):
         path = self.path.split("?", 1)[0]
         if path == "/api/dashboard":

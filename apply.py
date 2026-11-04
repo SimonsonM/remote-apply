@@ -762,8 +762,16 @@ TRACK_TITLE = re.compile(r"program|project|operations|\bops\b|implementation|del
 OVERLEVEL_TITLE = re.compile(r"\b(director|staff|principal|head of|vp|vice president|svp|evp|chief|tech(nical)? lead manager|engineering manager|manager of managers)\b", re.I)
 
 
+LEAD_LEVEL = re.compile(r"^\s*lead\b|,\s*lead\b|\blead (technical|program|product|project|solutions?|software|data|engineer|manager)\b", re.I)
+
+
 def overlevel_title(title):
-    return bool(OVERLEVEL_TITLE.search(title or "") and not re.search(r"\bchief of staff\b", title or "", re.I))
+    """Senior-IC and executive titles screened out at 2 years of program management on paper
+    (Staff / Principal / Lead roles drew the fastest rejections). 'Team Lead' and 'Chief of Staff' stay in."""
+    t = title or ""
+    if re.search(r"\bchief of staff\b", t, re.I):
+        return False
+    return bool(OVERLEVEL_TITLE.search(t) or (LEAD_LEVEL.search(t) and not re.search(r"\bteam lead\b", t, re.I)))
 
 
 def mark_overlevel_jobs(conn):
@@ -1856,13 +1864,24 @@ def ashby_extras(page, prof, bank, company):
         question = strip_label(label)
         if not question or re.search(r"locat|where .{0,30}(work|based|live|reside)|city", question, re.I):
             city = prof.get("city", "")
-            try:
-                box.click(); box.fill(""); box.type(city, delay=60)
-                opt = page.locator("[role=option]").filter(has_text=re.compile("|".join(rf"\b{re.escape(s)}\b" for s in [prof.get("state", "")] + HOME_STATES if s) or ".", re.I)).first
-                opt.wait_for(timeout=6000); opt.click()
-                results.append(dict(key=f"loc{k}", kind="text", status="filled", error="", value=city))
-            except Exception as e:
-                results.append(dict(key=f"loc{k}", kind="text", status="failed", error=str(e).splitlines()[0][:150], value=city))
+            state_re = re.compile("|".join(rf"\b{re.escape(s)}\b" for s in [prof.get("state", "")] + HOME_STATES if s) or ".", re.I)
+            filled, err = None, ""
+            # Small towns are often missing from the location service: fall back to the nearest listed city, then any option.
+            for attempt in [city] + [c for c in (prof.get("location_fallbacks") or ["Madison"]) if c != city]:
+                try:
+                    box.click(); box.fill(""); box.type(attempt, delay=60)
+                    opts = page.locator("[role=option]")
+                    opts.first.wait_for(timeout=6000)
+                    pick = opts.filter(has_text=state_re)
+                    (pick.first if pick.count() else opts.first).click()
+                    filled = box.input_value() or attempt
+                    break
+                except Exception as e:
+                    err = str(e).splitlines()[0][:150]
+            if filled:
+                results.append(dict(key=f"loc{k}", kind="text", status="filled", error="", value=filled))
+            else:
+                results.append(dict(key=f"loc{k}", kind="text", status="failed", error=f"Location field: no option offered for {city} ({err})", value=city))
             continue
         # Any other type-ahead (e.g. "How did you hear about us?"): type each stored alternative, pick a listed option.
         val = resolve(question, prof, bank, company)
@@ -1956,6 +1975,13 @@ def save_evidence(conn, attempt_id, page=None, kind='screenshot', path=None, not
     conn.commit()
 
 
+def _visible(locator):
+    try:
+        return locator.is_visible()
+    except Exception:
+        return False
+
+
 def submit_and_confirm(page, confirmation_timeout=30000):
     btn = page.get_by_role("button", name=re.compile(r"submit( your)?( application)?|send application", re.I))
     if not btn.count():
@@ -1991,11 +2017,15 @@ def submit_and_confirm(page, confirmation_timeout=30000):
         log(f"security code entered for {company}")
     if confirm_submission(page, before_url, before_hash, before_text, confirmation_timeout):
         return "applied", ""
-    errs = [t.strip() for t in page.locator("[role=alert], [class*='error' i]").all_inner_texts() if t.strip()][:3]
+    challenge = page.locator("iframe[src*='hcaptcha'][title*='challenge' i], iframe[src*='recaptcha/api2/bframe'], iframe[title*='challenge' i]")
+    if any(_visible(challenge.nth(i)) for i in range(min(challenge.count(), 5))):
+        return "needs_you", "Blocked by CAPTCHA - not submitted"   # e.g. Lever's hCaptcha puzzle over the submit button
+    alerts = page.locator("[role=alert], [class*='error' i]")
+    # only errors actually shown: Lever ships hidden templates such as 'File exceeds the maximum upload size of 100MB'
+    errs = [alerts.nth(i).inner_text().strip() for i in range(min(alerts.count(), 40)) if _visible(alerts.nth(i))]
+    errs = [e for e in errs if e][:3]
     if errs:  # validation errors first: an idle invisible-reCAPTCHA frame is not a challenge
         return "needs_you", "Form rejected: " + " | ".join(errs)[:300]
-    if page.locator("iframe[src*='hcaptcha'], iframe[src*='recaptcha/api2/bframe'], iframe[title*='challenge' i]").count():
-        return "needs_you", "Blocked by CAPTCHA - not submitted"
     return "unconfirmed", "Clicked submit, no confirmation seen - check email before re-applying"
 
 
@@ -2624,6 +2654,22 @@ def company_cap_reason(k, recent, tonight, prof):
     return ""
 
 
+def learned_cap_reason(conn, company, cache={}):
+    """Limits employers announced themselves (mail_sort records 'up to three roles within 60 days')."""
+    if not conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='company_limits'").fetchone():
+        return ""
+    k = cap_key(company)
+    for name, max_apps, days in conn.execute("SELECT company, max_apps, window_days FROM company_limits"):
+        if cap_key(name) != k:
+            continue
+        since = (dt.date.today() - dt.timedelta(days=days)).isoformat()
+        sent = sum(1 for (c,) in conn.execute("SELECT company FROM jobs WHERE status IN ('applied','unconfirmed','interview','rejected','offer') "
+                                               "AND applied_at >= ?", (since,)) if cap_key(c) == k)
+        if sent >= max_apps:
+            return f"employer limit: {max_apps} applications per {days} days"
+    return ""
+
+
 ANSWER_BLOCKERS = ('unapproved_answer', 'stale_answer', 'text', 'select', 'checkbox')
 
 
@@ -2657,7 +2703,10 @@ def application_candidates(conn, min_fit):
         (SELECT 1 FROM blockers b JOIN attempts a ON a.id=b.attempt_id
          WHERE a.job_url=jobs.url AND b.status='open')))
         ORDER BY CASE WHEN source IN ('greenhouse','lever','ashby','workday','workable','smartrecruiters','icims') THEN 0 ELSE 1 END,
-                 coalesce(fit,0) DESC, score DESC, found_at DESC""")
+                 coalesce(fit,0) + CASE WHEN coalesce(posted_at,'') >= date('now','-2 day') THEN 5
+                                        WHEN coalesce(posted_at,'') >= date('now','-7 day') THEN 2
+                                        WHEN coalesce(posted_at,'') != '' AND posted_at < date('now','-30 day') THEN -5 ELSE 0 END DESC,
+                 score DESC, found_at DESC""")   # fresh postings first: the first 48 hours get the most attention
     names = [col[0] for col in cursor.description]
     rows = cursor.fetchall()
     return [row for row in rows if eligible_job(dict(zip(names, row)), profile)]
@@ -2794,7 +2843,7 @@ def run(dry=False):
                 conn.execute("UPDATE jobs SET status='skipped_company', updated=CURRENT_TIMESTAMP WHERE url=?", (job["url"],))
                 continue
             ck = cap_key(job["company"])
-            capped = company_cap_reason(ck, recent, tonight, prof)
+            capped = company_cap_reason(ck, recent, tonight, prof) or learned_cap_reason(conn, job["company"])
             if capped:
                 if ck not in deferred:
                     log(f"{'deferred':12} {job['company']} - {job['title']} {capped}")

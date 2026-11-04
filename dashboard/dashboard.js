@@ -200,6 +200,8 @@ function renderInsights(data) {
   kpi(talks ? 'Best interview rate' : 'Most rejected level', pick ? pick.label : '—',
       pick ? (talks ? `${pick.interviews} interviews from ${pick.applied}` : `${(100 * pick.rejected / pick.applied).toFixed(1)}% rejected`) : 'need 10+ applications');
   kpis.lastChild.classList.add('text-kpi');
+  kpi('Days from posting to applying', ins.median_days_posted_to_applied ?? '—',
+      ins.applied_within_2_days_pct != null ? `${ins.applied_within_2_days_pct}% sent within 48 hours` : 'no posting dates yet');
   host.append(kpis);
   // funnel
   const funnel = el('div', 'funnel');
@@ -217,8 +219,17 @@ function renderInsights(data) {
   host.append(funnel);
   const grid = el('div', 'rate-grid');
   grid.append(rateTable(ins.top_titles || [], 'Most applied-for roles (response rate)'), rateTable(ins.by_level, 'Response rate by seniority'), rateTable(ins.by_source, 'By application system'),
-              rateTable(ins.by_fit, 'By match score'), rateTable(ins.by_mode, 'Remote vs local'));
+              rateTable(ins.by_fit, 'By match score'), rateTable(ins.by_mode, 'Remote vs local'),
+              rateTable(ins.by_resume || [], 'By resume version'));
   host.append(grid);
+  if ((ins.keyword_gaps || []).length) {
+    const gaps = el('div', 'rate-table gaps');
+    gaps.append(el('h3', '', 'Phrases your postings use that your resume never does (add only what is true for you)'));
+    const chips = el('div', 'gap-chips');
+    for (const g of ins.keyword_gaps) chips.append(el('span', 'geo-chip', `${g.phrase} · ${g.pct}%`));
+    gaps.append(chips);
+    host.append(gaps);
+  }
   const foot = el('div', 'insight-foot');
   const wd = el('div', 'weekday');
   wd.append(el('h3', '', 'Applications by weekday'));
@@ -234,6 +245,39 @@ function renderInsights(data) {
   }
   foot.append(wd, rej);
   host.append(foot);
+}
+
+function renderOutreach(data) {
+  const host = $('outreachBody');
+  host.replaceChildren();
+  const items = data.outreach || [];
+  setText('sideOutreachCount', number.format(items.length));
+  if (!items.length) {
+    host.append(el('p', 'muted', 'No drafts waiting. They are written after each nightly run: a note for applications with a 70+ match from the last 3 days, and a follow-up once an application has been quiet for its follow-up date.'));
+    return;
+  }
+  const list = el('div', 'threat-list');
+  for (const it of items) {
+    const card = el('article', `threat-card outreach ${it.kind}`);
+    const head = el('div', 'threat-head');
+    head.append(el('span', 'threat-level', it.kind === 'recruiter' ? 'INTRO NOTE' : 'FOLLOW-UP'),
+                el('strong', '', `${it.company} · ${it.title}`), el('small', '', `applied ${it.applied_at || '—'} · fit ${it.fit}`));
+    const body = el('pre', 'draft-text', it.text);
+    const actions = el('div', 'auth-badges');
+    const btn = (label, fn, cls = 'badge info') => { const b = el('button', cls, label); b.type = 'button'; b.addEventListener('click', fn); actions.append(b); return b; };
+    const copy = btn('Copy text', async () => { try { await navigator.clipboard.writeText(it.text); copy.textContent = 'Copied'; } catch (_) { copy.textContent = 'Select and copy'; } });
+    for (const [label, href] of [['Find the recruiter', it.recruiter], ['Find the hiring manager', it.hiring_manager], ['Job posting', it.job_url]]) {
+      const a = el('a', 'badge info', label); a.href = href; a.target = '_blank'; a.rel = 'noopener noreferrer'; actions.append(a);
+    }
+    const mark = (status) => async () => {
+      try { await fetch(`/api/outreach/${it.id}/${status}`, { method: 'POST' }); card.remove(); } catch (_) {}
+    };
+    btn('Mark sent', mark('sent'), 'badge ok');
+    btn('Skip', mark('skipped'), 'badge none');
+    card.append(head, body, actions);
+    list.append(card);
+  }
+  host.append(list);
 }
 
 function renderThreats(data) {
@@ -403,6 +447,7 @@ function render(data) {
   renderActivity(data);
   renderPipeline(data);
   renderInsights(data);
+  renderOutreach(data);
   renderThreats(data);
   renderJobs();
 }
@@ -442,7 +487,7 @@ $('filters').addEventListener('click', event => {
 $('backToTop').addEventListener('click', () => window.scrollTo({top:0,behavior:'smooth'}));
 
 // Each workspace is its own page; the sidebar switches between them by hash (#activity, #threats, ...).
-const PAGES = { 'overview': 'Overview', 'action-queue': 'Action queue', 'insights': 'Market insights', 'threats': 'Threats' };
+const PAGES = { 'overview': 'Overview', 'action-queue': 'Action queue', 'insights': 'Market insights', 'outreach': 'Outreach', 'threats': 'Threats' };
 function route() {
   const page = PAGES[location.hash.slice(1)] ? location.hash.slice(1) : 'overview';   // #activity now lives on the overview
   document.querySelectorAll('[data-page]').forEach(node => { node.hidden = node.dataset.page !== page; });

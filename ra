@@ -99,7 +99,10 @@ def main(argv=None):
     if args[0]=='nightly':
         # Close postings the boards have removed before applying; a failed sweep never blocks the run.
         subprocess.run([str(PYTHON),str(ROOT/'stale.py'),'--apply'],cwd=ROOT)
-        args=['run']
+        rc=subprocess.run([str(PYTHON),str(ROOT/'apply.py'),'run'],cwd=ROOT).returncode
+        # Outreach drafts for strong fresh applications and quiet ones; drafts only, nothing is sent.
+        subprocess.run([str(PYTHON),str(ROOT/'outreach.py')],cwd=ROOT)
+        return rc
     if args[0]=='health':
         return subprocess.run([str(PYTHON),str(ROOT/'install.py'),'--check'],cwd=ROOT).returncode
     if args[0]=='dashboard':

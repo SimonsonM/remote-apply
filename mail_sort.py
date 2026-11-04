@@ -46,12 +46,74 @@ def is_job(frm, subj):
 REJECT = re.compile(r"(not (to )?move forward|not moving forward with|(won\S{1,8}t|will not|not) be moving forward|"
                     r"decided to (pursue|move forward with|proceed with) (other|another)|move forward with (other|another) candidate|"
                     r"proceed with other candidates|no longer (being )?consider|not been selected|other candidates whose|"
-                    r"going in a direction that better fits|regret to inform)", re.I)
+                    r"going in a direction that better fits|regret to inform|(not|unable to) be able to move forward|unable to move forward|"
+                    r"reached (that|the|your) (application )?limit)", re.I)
+LIMIT = re.compile(r"(?:apply|applications?) (?:to|for)? ?up to (\w+) (?:roles|positions|jobs|applications)\s+(?:within|in|per|every) (?:a |an )?(\d+)[- ]day", re.I)
+WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6}
 
 
 def company_key(value):
     words = re.findall(r"[a-z0-9]+", value.lower())
     return " ".join(w for w in words if w not in {"inc", "llc", "labs", "corp"})
+
+
+def note_company_limit(conn, frm, text, cap):
+    """An employer told us its own cap ('up to three roles within a 60 day period'): remember it for the apply caps."""
+    n = cap.group(1).lower()
+    n = WORDS.get(n, int(n) if n.isdigit() else 3)
+    days = int(cap.group(2))
+    jobs = conn.execute("SELECT DISTINCT company FROM jobs WHERE status IN ('applied','unconfirmed','rejected')").fetchall()
+    low, sender = f" {company_key(text)} ", f" {company_key(email.utils.parseaddr(frm)[1].split('@')[-1])} "
+    for (company,) in jobs:
+        k = f" {company_key(company)} "
+        if company and (k in sender or k in low[:400]):
+            conn.execute("CREATE TABLE IF NOT EXISTS company_limits (company TEXT PRIMARY KEY, max_apps INTEGER, window_days INTEGER, learned TEXT)")
+            conn.execute("INSERT OR REPLACE INTO company_limits VALUES (?,?,?,date('now'))", (company, n, days))
+            print(f"company limit learned: {company} - {n} per {days} days")
+            return
+
+
+INTERVIEW = re.compile(r"((would|we'd|i'd) (like|love) to (invite you|schedule|set up|arrange)|(invite|inviting) you to (an? )?(interview|phone screen|call|conversation|chat)|"
+                       r"interview (invitation|request)|please (use|click|select|share|book|pick|reply with)[^.]{0,60}(time|availability|slot|link|interview|call)|"
+                       r"calendly\.com|goodtime\.io|cal\.com/|book a time|pick a time|select a time slot|your availability (for|this|next))", re.I)
+CONDITIONAL = re.compile(r"\bif (you are|you're|your (experience|qualifications|background|skills)|we|there)\b[^.]{0,120}(schedule|contact|reach out)|"
+                         r"among the qualified|should (you|your)[^.]{0,80}(contact|reach out|schedule)", re.I)
+
+
+def log_interviews(m, mailbox, hits):
+    """Mark an applied job 'interview' when an invitation names exactly one of them, and start a company brief."""
+    import sqlite3, subprocess
+    m.select(mailbox, readonly=True)
+    conn = sqlite3.connect(Path(__file__).with_name("applications.sqlite3"), timeout=60)
+    jobs = conn.execute("SELECT url, company, title FROM jobs WHERE status IN ('applied','unconfirmed','interview')").fetchall()
+    n = 0
+    for uid, frm, subj in hits:
+        _, resp = m.uid("FETCH", uid, "(BODY.PEEK[TEXT])")
+        body = re.sub(r"=\r?\n", "", b"".join(p[1] for p in resp if isinstance(p, tuple)).decode("utf-8", "replace"))
+        text = f"{frm} {subj} {re.sub(r'<[^>]+>', ' ', body)}"
+        hit = INTERVIEW.search(text)
+        if not hit or REJECT.search(text) or CONFIRM.search(subj) or CONDITIONAL.search(text[max(0, hit.start() - 200):hit.end()]):
+            continue
+        low = f" {company_key(text)} "
+        sender = f" {company_key(email.utils.parseaddr(frm)[1].split('@')[-1])} "
+        cands = [j for j in jobs if j[1] and (f" {company_key(j[1])} " in low or f" {company_key(j[1])} " in sender)]
+        exact = [j for j in cands if j[2] and f" {company_key(j[2])} " in low]
+        matched = exact if exact else cands
+        if len(matched) != 1:
+            if cands:
+                print(f"interview? {subj[:70]} - matches {len(cands)} jobs, left for you")
+            continue
+        url, co, title = matched[0]
+        if conn.execute("UPDATE jobs SET status='interview', notes=?, updated=CURRENT_TIMESTAMP WHERE url=? AND status!='interview'",
+                        (f"Interview invite by email: {subj[:120]}", url)).rowcount:
+            print(f"INTERVIEW: {co} - {title}"); n += 1
+            py = Path(__file__).with_name(".venv") / "bin" / "python"
+            if py.exists():   # company brief in the background (Claude + web search), saved under interviews/
+                subprocess.Popen([str(py), "-c", "import sys, sqlite3, interview; c=sqlite3.connect('applications.sqlite3'); c.row_factory=sqlite3.Row;"
+                                  " interview.brief(dict(c.execute('SELECT * FROM jobs WHERE url=?', (sys.argv[1],)).fetchone()))", url],
+                                 cwd=Path(__file__).parent, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    conn.commit(); conn.close()
+    return n
 
 
 def log_rejections(m, mailbox, hits):
@@ -69,6 +131,9 @@ def log_rejections(m, mailbox, hits):
         text = f"{frm} {subj} {re.sub(r'<[^>]+>', ' ', body)}"
         if not REJECT.search(text):
             continue
+        cap = LIMIT.search(text)
+        if cap:
+            note_company_limit(conn, frm, text, cap)
         low = f" {company_key(text)} "
         sender = f" {company_key(email.utils.parseaddr(frm)[1].split('@')[-1])} "
         cands = [j for j in jobs if j[1] and (f" {company_key(j[1])} " in low or
@@ -85,7 +150,8 @@ def log_rejections(m, mailbox, hits):
 
 
 CONFIRM = re.compile(r"(thanks? (you )?for (applying|your application|submitting)|application (has been |was )?(received|submitted)|"
-                     r"(we('ve| have)|have) received your application|received your application|successfully (applied|submitted))", re.I)
+                     r"(we('ve| have)|have) received your application|received your application|successfully (applied|submitted)|"
+                     r"(time you took|taking the time) to apply|(carefully )?reviewing (each|your) application|your application for .{3,140} at )", re.I)
 
 
 def log_confirmations(m, mailbox, hits):
@@ -205,6 +271,7 @@ def folder_rejections(m, days):
                 pending = None
     logged = log_rejections(m, f'"{FOLDER}"', hits)
     log_confirmations(m, f'"{FOLDER}"', hits)
+    log_interviews(m, f'"{FOLDER}"', hits)
     if uids:
         STATE.write_text(json.dumps({"uidvalidity": validity, "last_uid": int(uids[-1])}) + "\n")
     print(f"folder scanned {len(hits)} | rejections logged {logged}")
@@ -264,6 +331,7 @@ def main():
     if not dry:
         log_rejections(m, "INBOX", all_hits)
         log_confirmations(m, "INBOX", all_hits)
+        log_interviews(m, "INBOX", all_hits)
         m.select("INBOX")
     if not dry and hits:
         for i in range(0, len(hits), 100):

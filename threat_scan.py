@@ -28,7 +28,7 @@ import mail_sort
 
 ROOT = Path(__file__).resolve().parent
 DB = ROOT / "applications.sqlite3"
-BOXES = ("INBOX", f'"{mail_sort.FOLDER}"', "Spam")
+BOXES = ("INBOX", f'"{mail_sort.FOLDER}"', "Spam")   # the quarantine folder is not rescanned
 FREE_MAIL = {"gmail.com", "googlemail.com", "outlook.com", "hotmail.com", "live.com", "yahoo.com", "aol.com", "icloud.com",
              "me.com", "proton.me", "protonmail.com", "gmx.com", "mail.com", "zoho.com", "yandex.com", "msn.com"}
 ATS_DOMAINS = ("greenhouse", "lever.co", "ashbyhq", "myworkday", "workday", "icims", "smartrecruiters", "taleo", "jobvite",
@@ -245,6 +245,35 @@ def _body_text(raw):
     return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", " ".join(parts)))[:20000]
 
 
+QUARANTINE = "Folders/Suspected Scams"
+
+
+def quarantine(m, conn, log=print):
+    """Move high-risk messages out of the inbox and job folder into their own folder (reversible: just move them back)."""
+    rows = conn.execute("SELECT msg_key, mailbox FROM mail_threats WHERE level='high' AND mailbox != ?", (QUARANTINE,)).fetchall()
+    if not rows:
+        return 0
+    m.create(f'"{QUARANTINE}"')
+    moved = 0
+    for key, box in rows:
+        typ, _ = m.select(f'"{box}"' if " " in box or "/" in box else box)
+        if typ != "OK":
+            continue
+        _, data = m.uid("SEARCH", None, "HEADER", "Message-ID", key.strip("<>"))
+        uids = data[0].split()
+        if not uids:
+            continue
+        s = b",".join(uids).decode()
+        typ, _ = m.uid("MOVE", s, f'"{QUARANTINE}"')
+        if typ != "OK":
+            m.uid("COPY", s, f'"{QUARANTINE}"'); m.uid("STORE", s, "+FLAGS", r"(\Deleted)"); m.expunge()
+        conn.execute("UPDATE mail_threats SET mailbox=? WHERE msg_key=?", (QUARANTINE, key))
+        moved += 1
+        log(f"quarantined: {key[:60]}")
+    conn.commit()
+    return moved
+
+
 def scan(days=14, rescan=False, log=print):
     env = mail_sort.keys()
     m = imaplib.IMAP4("127.0.0.1", 1143)
@@ -295,6 +324,7 @@ def scan(days=14, rescan=False, log=print):
                     log(f"threat {row['level']:10} {row['score']:3} {row['from_addr'][:40]} | {row['subject'][:60]}")
             conn.commit()
         conn.commit()
+    quarantine(m, conn, log)
     conn.close()
     m.logout()
     log(f"threat scan: {counts['scanned']} new messages, {counts['suspicious']} suspicious, {counts['high']} high")
