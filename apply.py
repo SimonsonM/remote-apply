@@ -1207,10 +1207,22 @@ def foreign_work_question(label, job=None):
     return bool(not names_us and loc and FOREIGN_COUNTRY.search(loc) and not US_OK.search(loc))
 
 
+def foreign_work_answer(label, prof):
+    """Truthful answer to a work-authorization question about another country. Only US status is on file:
+    the user has no right to work there, would work remotely from the US, and moves only with paid relocation."""
+    if not (prof or {}).get("us_citizen"):
+        return ""   # nothing on file to answer from: leave it to the user
+    remote = "I'm a US citizen and would work remotely from the United States (as a contractor or through an employer of record)"
+    if re.search(r"sponsor|visa|work permit", label, re.I):
+        return (f"Yes - {remote}, which needs no visa. Working in the country itself would require sponsorship "
+                f"and a paid relocation package.|Yes")
+    return f"No - {remote}; I don't hold work authorization there and would relocate only with a paid relocation package.|No"
+
+
 def resolve(label, prof, bank, company):
     l = strip_label(label)
     if foreign_work_question(l, CURRENT_JOB):
-        return 
+        return foreign_work_answer(l, prof)
     if EMPLOYER_HISTORY_Q.search(l):
         if any(ckey(name) in ckey(l) or ckey(company) == ckey(name) for name in past_employers(prof)):
             return ''

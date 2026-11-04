@@ -29,3 +29,13 @@ def test_foreign_work_authorization_goes_to_user():
 def test_remote_lead_matches_same_region_posting():
     assert employer_link.location_compatible("Remote - UK", "Remote, UK")
     assert not employer_link.location_compatible("Remote - United States", "Remote - UK")
+
+
+def test_foreign_work_answers_are_truthful_remote_from_us():
+    prof = {"us_citizen": True}
+    right = apply.foreign_work_answer("Do you have the right to work in the UK?", prof)
+    assert right.endswith("|No") and "remotely from the United States" in right
+    assert apply.foreign_work_answer("Will you require visa sponsorship to work in the UK?", prof).endswith("|Yes")
+    assert apply.pick_option(right, ["Yes", "No"]) == "No"
+    assert apply.foreign_work_answer("Right to work in the UK?", {}) == ""
+    assert apply.resolve("Do you have the right to work in the UK?", prof, [], "Acme").endswith("|No")
