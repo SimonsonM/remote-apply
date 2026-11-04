@@ -86,5 +86,7 @@
   },
   "agency_daily_cap": 2,
   "past_employers": [],
-  "remote_anywhere": false
+  "remote_anywhere": false,
+  "scam_regions": [],
+  "remote_regions": []
 }

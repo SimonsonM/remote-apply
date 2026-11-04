@@ -871,6 +871,43 @@ def role_ok(title):
 CONTRACT = re.compile(r"\b(contract|contractor|1099|c2h|contract[- ]to[- ]hire|temp[- ]to[- ]hire|temporary|freelance|fixed[- ]term|consultant \(contract\)|\d+[- ]month (contract|assignment))\b", re.I)
 
 
+EU_COUNTRIES = {"austria": "at", "belgium": "be", "bulgaria": "bg", "croatia": "hr", "cyprus": "cy", "czech republic": "cz",
+                "czechia": "cz", "denmark": "dk", "estonia": "ee", "finland": "fi", "france": "fr", "germany": "de", "greece": "gr",
+                "hungary": "hu", "ireland": "ie", "italy": "it", "latvia": "lv", "lithuania": "lt", "luxembourg": "lu", "malta": "mt",
+                "netherlands": "nl", "poland": "pl", "portugal": "pt", "romania": "ro", "slovakia": "sk", "slovenia": "si",
+                "spain": "es", "sweden": "se"}
+US_STATE_CODES = ("al ak az ar ca co ct de fl ga hi id il in ia ks ky la me md ma mi mn ms mo mt ne nv nh nj nm ny nc nd oh ok "
+                  "or pa ri sc sd tn tx ut vt va wa wv wi wy dc").split()
+US_PLACES = r"\b(sf|nyc|san francisco|new york|seattle|chicago|boston|austin|denver|atlanta|los angeles|la|dallas|miami|" \
+            r"washington|portland|phoenix|san diego|san jose|philadelphia|minneapolis|madison|milwaukee)\b"
+REGION_WORDS = {"us": (r"united states|\busa\b|\bu\.s\.|\bus\b|/ us\b", US_PLACES,
+                       r"(?:^|[-;,(]\s*|remote\s*-\s*)(" + "|".join(US_STATE_CODES) + r")\b(?!\s*/)"),
+                "ca": (r"canada|/ ca\b|\b(ontario|quebec|british columbia|alberta|toronto|vancouver|montreal)\b",),
+                "eu": (r"european union|\beu\b|\bemea\b|\beurope\b",) + tuple(rf"\b{c}\b|/ {code}\b" for c, code in EU_COUNTRIES.items())}
+OTHER_COUNTRY = re.compile(r"\b(united kingdom|uk|england|scotland|wales|costa rica|mexico|colombia|brazil|argentina|chile|peru|"
+                           r"uruguay|india|pakistan|philippines|vietnam|indonesia|malaysia|singapore|thailand|japan|korea|china|"
+                           r"australia|new zealand|south africa|nigeria|kenya|egypt|israel|turkey|uae|dubai|switzerland|norway|"
+                           r"serbia|ukraine|georgia|armenia|latam|apac)\b", re.I)
+OPEN_WORLD = re.compile(r"anywhere|worldwide|global|americas|north america|^\s*remote\s*$", re.I)
+
+
+def remote_region_ok(location, profile):
+    """profile.json "remote_regions" (e.g. ["us", "ca", "eu"]) limits remote roles to those regions; listings open
+    worldwide or across the Americas still count. No setting: remote_anywhere decides, else US only."""
+    regions = [r.lower() for r in (profile.get("remote_regions") or [])]
+    loc = location or ""
+    if not regions:
+        return bool(US_OK.search(loc) or profile.get("remote_anywhere", REMOTE_ANYWHERE))
+    if OPEN_WORLD.search(re.sub(r"(?i)^remote\s*[-,/]\s*", "", loc)) or OPEN_WORLD.search(loc.strip()):
+        return True
+    explicit = [p for r in regions for p in REGION_WORDS.get(r, ()) if p not in (US_PLACES, REGION_WORDS["us"][-1])]
+    if any(re.search(p, loc, re.I) for p in explicit):
+        return True
+    if OTHER_COUNTRY.search(loc):
+        return False   # 'San Jose, Costa Rica' is not San Jose, CA
+    return any(re.search(p, loc, re.I) for r in regions for p in REGION_WORDS.get(r, ()))
+
+
 _REQ_HERE = re.compile(r"\b(must|required to|need to|needs to|should|will need to|expected to|are required to)\s+(currently\s+)?"
                        r"(be\s+)?(based|located|living|residing|reside|live|relocate|resident)\b"
                        r"|\b(relocat\w+)\s+(to\s+\S+(\s+\S+){0,3}\s+)?(is\s+)?(required|mandatory|necessary)"
@@ -896,9 +933,37 @@ def requires_relocation_abroad(job):
     return not (_PAID_RELO.search(text) and not _NO_RELO.search(text))
 
 
+# Remote listings tied to known scam-centre regions (job-offer lures into Southeast Asian scam compounds).
+# profile.json "scam_regions" replaces this list.
+SCAM_REGIONS = ("cambodia", "phnom penh", "sihanoukville", "myanmar", "burma", "yangon", "myawaddy", "shwe kokko",
+                "laos", "vientiane", "golden triangle", "bokeo")
+UNVERIFIED_SOURCES = ("adzuna", "himalayas", "remotive")      # aggregators: no employer-run application system behind them
+ANON_COMPANY = re.compile(r"^\s*(confidential|private|stealth|anonymous|undisclosed|hiring company|company|n/?a|unknown|)\s*$", re.I)
+
+
+def scam_listing(job, profile=None):
+    """Why a remote listing looks scam-prone ('' if it doesn't): a scam-centre region, or an aggregator lead
+    with recruitment-scam language (chat-app interviews, checks, payment apps, equipment purchases) or no named employer."""
+    if not REMOTE.search(job.get("location") or ""):
+        return ""
+    text = f"{job.get('location', '')} {job.get('title', '')} {job.get('description', '')}".lower()
+    regions = (profile or {}).get("scam_regions") or SCAM_REGIONS
+    hit = next((r for r in regions if re.search(r"\b" + re.escape(r.lower()) + r"\b", text)), None)
+    if hit:
+        return f"scam-prone region: {hit}"
+    if (job.get("source") or "") in UNVERIFIED_SOURCES:
+        if ANON_COMPANY.match(job.get("company") or ""):
+            return "remote lead with no named employer"
+        import threat_scan
+        flags = [why for pattern, points, why in threat_scan.RED_FLAGS if points >= 15 and re.search(pattern, text, re.I)]
+        if len(flags) >= 2:   # one stray mention (a fintech posting naming Venmo) is normal; scams stack them
+            return "scam language: " + "; ".join(flags[:2])
+    return ""
+
+
 def score(job, profile, eu):
     title, loc, body = job["title"].lower(), job["location"], job["description"].lower()
-    remote_ok = not BAD_LOC.search(loc) and REMOTE.search(loc) and (US_OK.search(loc) or profile.get("remote_anywhere", REMOTE_ANYWHERE))
+    remote_ok = not BAD_LOC.search(loc) and REMOTE.search(loc) and remote_region_ok(loc, profile)
     metro = (profile.get("metro") or profile.get("chicago", False)) and \
         metro_ok(loc, profile.get("metro_radius_miles", profile.get("chicago_radius_miles", 30)))
     if not remote_ok and not job.get("local") and not metro and not local_ok(loc, profile.get("local_radius_miles", 40)):
@@ -906,7 +971,9 @@ def score(job, profile, eu):
     if any(t in title for t in BAD_TITLE) or not role_ok(job["title"]):
         return None
     if requires_relocation_abroad(job):
-        return None  # must live in / move to another country, and the employer doesn't pay to relocate
+        return None
+    if scam_listing(job, profile):
+        return None  # remote listing in a scam-centre region, or an aggregator lead that reads like a recruitment scam  # must live in / move to another country, and the employer doesn't pay to relocate
     if ckey(job.get("company", "")) in {ckey(c) for c in profile.get("blocked_companies", [])}:
         return None  # e.g. Coinbase: arbitration agreement on every application
     pts = sum(5 for t in ("project manager", "program manager", "implementation", "operations", "process") if t in title)
@@ -1015,6 +1082,14 @@ def scan():
             if NON_ENGLISH_TITLE.search(title or ''):
                 conn.execute("UPDATE jobs SET status='low_fit', notes='language requirement' WHERE url=?", (url,))
         mark_overlevel_jobs(conn)
+        for url, company, title, loc, desc, source in conn.execute("SELECT url, company, title, location, description, source FROM jobs "
+                                                                  "WHERE status IN ('new','ready','manual','needs_you','captcha','staged')").fetchall():
+            why = scam_listing(dict(company=company, title=title, location=loc, description=desc, source=source), profile)
+            if not why and REMOTE.search(loc or "") and profile.get("remote_regions") and not remote_region_ok(loc, profile) \
+                    and not local_ok(loc, profile.get("local_radius_miles", 40)):
+                why = "remote outside allowed regions (" + ", ".join(profile["remote_regions"]).upper() + ")"
+            if why:
+                conn.execute("UPDATE jobs SET status='skip', notes=?, updated=CURRENT_TIMESTAMP WHERE url=?", (f"scam filter: {why}", url))
         for url, title, desc in conn.execute("SELECT url, title, description FROM jobs WHERE status IN ('new','ready','manual','needs_you')").fetchall():
             if requires_relocation_abroad({"title": title, "description": desc}):
                 conn.execute("UPDATE jobs SET status='skip', notes='requires relocation abroad, no paid relocation', "
