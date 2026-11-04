@@ -883,6 +883,8 @@ US_PLACES = r"\b(sf|nyc|san francisco|new york|seattle|chicago|boston|austin|den
 REGION_WORDS = {"us": (r"united states|\busa\b|\bu\.s\.|\bus\b|/ us\b", US_PLACES,
                        r"(?:^|[-;,(]\s*|remote\s*-\s*)(" + "|".join(US_STATE_CODES) + r")\b(?!\s*/)"),
                 "ca": (r"canada|/ ca\b|\b(ontario|quebec|british columbia|alberta|toronto|vancouver|montreal)\b",),
+                "uk": (r"united kingdom|\buk\b|\bu\.k\.|great britain|england|scotland|wales|northern ireland|/ gb\b|"
+                       r"\b(london|manchester|edinburgh|glasgow|cardiff|belfast|bristol|birmingham|leeds)\b",),
                 "eu": (r"european union|\beu\b|\bemea\b|\beurope\b",) + tuple(rf"\b{c}\b|/ {code}\b" for c, code in EU_COUNTRIES.items())}
 OTHER_COUNTRY = re.compile(r"\b(united kingdom|uk|england|scotland|wales|costa rica|mexico|colombia|brazil|argentina|chile|peru|"
                            r"uruguay|india|pakistan|philippines|vietnam|indonesia|malaysia|singapore|thailand|japan|korea|china|"

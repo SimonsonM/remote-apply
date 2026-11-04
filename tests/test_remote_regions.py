@@ -20,3 +20,10 @@ def test_blocked_regions():
 def test_default_without_setting_is_us_only():
     assert apply.remote_region_ok("Remote - United States", {"remote_anywhere": False})
     assert not apply.remote_region_ok("Remote - Germany", {"remote_anywhere": False})
+
+
+def test_uk_region_opt_in():
+    uk = {"remote_regions": ["us", "ca", "eu", "uk"]}
+    for loc in ("Remote - United Kingdom - London / GB", "Cardiff, London or Remote (UK)", "UK Remote"):
+        assert apply.remote_region_ok(loc, uk), loc
+    assert not apply.remote_region_ok("Remote - Colombia", uk)
