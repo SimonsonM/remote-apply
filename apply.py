@@ -2715,12 +2715,14 @@ def reconcile_blockers(conn, prof):
 
 def application_candidates(conn, min_fit):
     """Retry jobs once their open blockers are gone, including jobs without an attempt."""
+    conn.create_function('is_remote_listing', 1, lambda location: int(remote_listing(location)))
     profile = min_fit if isinstance(min_fit, dict) else {'min_fit': min_fit}
     cursor = conn.execute("""SELECT * FROM jobs WHERE source NOT IN ('eightfold','microsoft') AND
         (status IN ('new','ready') OR (status='needs_you' AND NOT EXISTS
         (SELECT 1 FROM blockers b JOIN attempts a ON a.id=b.attempt_id
          WHERE a.job_url=jobs.url AND b.status='open')))
         ORDER BY CASE WHEN source IN ('greenhouse','lever','ashby','workday','workable','smartrecruiters','icims') THEN 0 ELSE 1 END,
+                 CASE WHEN is_remote_listing(location) THEN 0 ELSE 1 END,   -- remote roles are the priority
                  coalesce(fit,0) + CASE WHEN coalesce(posted_at,'') >= date('now','-2 day') THEN 5
                                         WHEN coalesce(posted_at,'') >= date('now','-7 day') THEN 2
                                         WHEN coalesce(posted_at,'') != '' AND posted_at < date('now','-30 day') THEN -5 ELSE 0 END DESC,

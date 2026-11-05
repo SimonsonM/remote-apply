@@ -82,7 +82,8 @@ def fetch(cfg, keys, log=print):
         if cfg.get("remote", True):
             searches.append((f"{q} remote", "United States", True))
     start = dt.date.today().toordinal() % max(1, len(searches))   # rotate so every query gets its turn across nights
-    searches = (searches[start:] + searches[:start])[:per_night]
+    searches = searches[start:] + searches[:start]
+    searches = sorted(searches, key=lambda s: not s[2])[:per_night]   # remote searches first: remote is the priority
     for q, where, remote in searches:
         if _usage() >= budget:
             log(f"google jobs: monthly budget of {budget} searches used")
