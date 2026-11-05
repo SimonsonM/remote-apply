@@ -12,6 +12,8 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parent
 FOLDERS=('backups','reports','proof','cover_letters','followups')
 DESKTOP=Path.home()/'.local/share/applications/remote-apply.desktop'
+DESKTOP_DASH=Path.home()/'.local/share/applications/remote-apply-dashboard.desktop'
+MODELS=('nomic-embed-text','qwen2.5:14b')
 MARKER='# remote-apply nightly'
 
 
@@ -25,8 +27,28 @@ def installation_plan(root=ROOT,desktop=False):
         'Back up and migrate applications.sqlite3',
         f'Make {root / "ra"} executable',
     ]
-    if desktop: steps.append(f'Write {DESKTOP}')
+    steps.append('Copy boards.example.json to boards.json if you have none')
+    steps.append(f'Pull Ollama models {", ".join(MODELS)} if Ollama is installed and they are missing')
+    if desktop: steps.append(f'Write {DESKTOP} and {DESKTOP_DASH}')
     return steps
+
+
+def ollama_models(write=print, ask=True):
+    """Pull the embedding and local drafting models when Ollama is present; skip quietly otherwise."""
+    if not shutil.which('ollama'):
+        write('Ollama not found: install it from https://ollama.com, then run ./install.sh again (ranking needs it).')
+        return
+    try:
+        have=subprocess.run(['ollama','list'],capture_output=True,text=True,timeout=20).stdout
+    except Exception:
+        write('Ollama is installed but not running: start it (systemctl start ollama) and run ./install.sh again.')
+        return
+    for model in MODELS:
+        if model.split(':')[0] in have and (':' not in model or model in have):
+            continue
+        if ask and sys.stdin.isatty() and input(f'Download Ollama model {model}? [Y/n] ').strip().lower() in ('n','no'):
+            continue
+        subprocess.run(['ollama','pull',model])
 
 
 def run(args,**kwargs):
@@ -95,14 +117,14 @@ def remove_cron():
 
 def uninstall(root=ROOT):
     (root/'ra').unlink(missing_ok=True)
-    if DESKTOP.exists():
-        content=DESKTOP.read_text()
-        if f'Exec={root / "ra"}' in content: DESKTOP.unlink()
+    for entry in (DESKTOP,DESKTOP_DASH):
+        if entry.exists() and f'Exec={root / "ra"}' in entry.read_text():
+            entry.unlink()
     remove_cron()
     print('Launcher, owned desktop entry, and nightly cron entry removed. Data preserved.')
 
 
-def install(root=ROOT,desktop=False):
+def install(root=ROOT,desktop=False,extras=False):
     if sys.version_info < (3,10): raise SystemExit('Python 3.10 or newer is required')
     venv=root/'.venv'
     if not venv.exists(): run([sys.executable,'-m','venv',str(venv)])
@@ -123,12 +145,26 @@ def install(root=ROOT,desktop=False):
     if not db.exists():
         fd=os.open(db,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600); os.close(fd)
     with sqlite3.connect(db) as conn: state.migrate(conn)
-    shutil.copyfile(root/'launcher.py',root/'ra')
+    if (root/'launcher.py').resolve()!=(root/'ra').resolve():
+        shutil.copyfile(root/'launcher.py',root/'ra')
     (root/'ra').chmod(0o755)
+    if not (root/'boards.json').exists() and (root/'boards.example.json').exists():
+        shutil.copyfile(root/'boards.example.json',root/'boards.json')
+    if extras and (root/'requirements-optional.txt').exists():
+        run([str(python),'-m','pip','install','--no-cache-dir','-r',str(root/'requirements-optional.txt')])
+    ollama_models()
     if desktop:
         DESKTOP.parent.mkdir(parents=True,exist_ok=True)
-        DESKTOP.write_text('[Desktop Entry]\nType=Application\nName=Remote Apply\n'+f'Exec={root / "ra"}\nPath={root}\nTerminal=true\n')
-    print('Installed. Next: ./ra')
+        DESKTOP.write_text('[Desktop Entry]\nType=Application\nName=Remote Apply\nComment=Job search menu\n'
+                           +f'Exec={root / "ra"}\nPath={root}\nTerminal=true\nIcon=system-search\n')
+        DESKTOP_DASH.write_text('[Desktop Entry]\nType=Application\nName=Remote Apply Dashboard\nComment=Open the job search dashboard\n'
+                                +f'Exec={root / "ra"} dashboard\nPath={root}\nTerminal=false\nIcon=utilities-system-monitor\n')
+    print('\nInstalled.')
+    print('  ./ra              menu (first run walks you through setup)')
+    print('  ./ra dashboard    open the dashboard in your browser')
+    print('  ./ra schedule on  apply every night at 3 AM')
+    if not desktop:
+        print('  ./install.sh --desktop-entry   add Remote Apply to your applications menu')
 
 
 def main(argv=None):
@@ -137,14 +173,15 @@ def main(argv=None):
     group.add_argument('--dry-run',action='store_true')
     group.add_argument('--check',action='store_true')
     group.add_argument('--uninstall',action='store_true')
-    parser.add_argument('--desktop-entry',action='store_true')
+    parser.add_argument('--desktop-entry',action='store_true',help='add Remote Apply to the applications menu')
+    parser.add_argument('--extras',action='store_true',help='also install requirements-optional.txt (Indeed, voice, STORM)')
     args=parser.parse_args(argv)
     if args.dry_run:
         print('\n'.join(installation_plan(desktop=args.desktop_entry)))
         return 0
     if args.check: return check()
     if args.uninstall: uninstall(); return 0
-    install(desktop=args.desktop_entry)
+    install(desktop=args.desktop_entry,extras=args.extras)
     return 0
 
 if __name__=='__main__': raise SystemExit(main())

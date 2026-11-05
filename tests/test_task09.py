@@ -28,9 +28,11 @@ def test_install_plan_and_launcher_menu(capsys):
     assert not any('desktop' in step.lower() for step in plan)
     assert any('remote-apply.desktop' in step for step in install.installation_plan(Path('/tmp/example'),True))
     assert launcher.menu_action('1')==['setup']
-    assert launcher.menu_action('5')==['page','status']
+    assert launcher.menu_action('4')==['page','status']
     assert launcher.menu_action('7')==['followups']
-    assert launcher.menu_action('8')==['health']
+    assert launcher.menu_action('h')==['health']
+    assert launcher.menu_action('2')==['dashboard']
+    assert launcher.menu_action('3')==['nightly']
     assert launcher.menu_action('0')==[]
     assert launcher.menu_action('6',False)==['setup']
     assert launcher.menu_action('x') is None

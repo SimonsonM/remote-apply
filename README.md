@@ -35,7 +35,7 @@ It never invents qualifications or screening answers, and it never counts an app
 ```bash
 git clone https://github.com/SimonsonM/remote-apply
 cd remote-apply
-./install.sh
+./install.sh --desktop-entry   # optional menu shortcuts
 ./ra
 ```
 
@@ -59,7 +59,8 @@ Then make it yours:
 |---|---|
 | `./ra` | Interactive menu |
 | `./ra setup` | Change your profile and standard answers |
-| `./ra dashboard` | Local dashboard at http://127.0.0.1:8675 |
+| `./ra dashboard` | Opens the local dashboard (http://127.0.0.1:8675) |
+| `./ra update` | Pull the latest version and re-run the installer |
 | `./ra nightly` | Run the full nightly cycle now |
 | `./ra schedule on\|off\|status` | Turn the nightly 3 AM run on or off |
 | `./ra stale [--apply]` | Find (and close) postings the boards have removed |

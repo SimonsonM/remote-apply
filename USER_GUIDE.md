@@ -5,8 +5,11 @@ Remote Apply finds job postings, ranks them against your resume, fills and (if y
 ## Install
 
 ```bash
-./install.sh              # creates .venv, installs requirements.txt and Playwright's Chromium
-./install.sh --check      # health check at any time
+./install.sh                  # .venv, requirements.txt, Playwright Chromium, Ollama models, boards.json
+./install.sh --desktop-entry  # also adds "Remote Apply" and "Remote Apply Dashboard" to the app menu
+./install.sh --extras         # also installs requirements-optional.txt (Indeed, voice, STORM)
+./install.sh --check          # health check at any time
+./ra update                   # git pull, then re-run the installer
 ```
 
 - **Required packages** are pinned in `requirements.txt`. Optional extras (voice mock interviews, STORM research briefs, the Indeed source) are in `requirements-optional.txt`: `.venv/bin/pip install -r requirements-optional.txt`.
@@ -46,7 +49,7 @@ What the program never does on its own: agree to arbitration or other waivers of
 
 ## Dashboard
 
-`./ra dashboard`, then open <http://127.0.0.1:8675>. Pages:
+`./ra dashboard` starts the server if needed and opens <http://127.0.0.1:8675> in your browser. Pages:
 
 - **Overview**: key numbers, outcomes (total applied, rejected, response rate, interviews, awaiting reply), application activity and the pipeline.
 - **Action queue**: everything that needs you (forms ready to submit, CAPTCHAs, unanswered questions, submissions to verify, manual leads), with links.
@@ -58,7 +61,9 @@ What the program never does on its own: agree to arbitration or other waivers of
 
 | Command | What it does |
 |---|---|
-| `./ra` | Interactive menu |
+| `./ra` | Menu: setup, dashboard, run now, what needs me, answers, check a form, replies, schedule, update, health |
+| `./ra update` | Pull the latest version and re-run the installer |
+| `./ra outreach` / `./ra threats` / `./ra mail` | Outreach drafts, scam monitor, mail sort |
 | `./ra nightly` | Everything the nightly run does, now |
 | `./ra stale [--apply]` | Find (and close) postings the boards have removed |
 | `./ra tracks init\|list\|add\|edit` | Career-track resume versions |
