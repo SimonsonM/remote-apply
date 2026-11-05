@@ -126,7 +126,7 @@ def title_family(title):
 
 SYSTEM_NAMES = {"greenhouse": "Greenhouse", "lever": "Lever", "ashby": "Ashby", "workday": "Workday", "workable": "Workable",
                 "smartrecruiters": "SmartRecruiters", "icims": "iCIMS", "eightfold": "Eightfold", "microsoft": "Microsoft Careers",
-                "adzuna": "Adzuna", "remotive": "Remotive", "himalayas": "Himalayas", "usajobs": "USAJOBS",
+                "adzuna": "Adzuna", "indeed": "Indeed", "remotive": "Remotive", "himalayas": "Himalayas", "usajobs": "USAJOBS",
                 "roberthalf": "Robert Half", "michaelpage": "Michael Page", "adecco": "Adecco"}
 
 

@@ -38,7 +38,7 @@ def test_lead_sources_never_automated(monkeypatch):
         def new_page(self):
             raise AssertionError('browser must not open for leads')
     for src in apply.LEAD_SOURCES:
-        expected = 'manual' if src in ('adzuna', 'remotive', 'himalayas') else 'needs_you'
+        expected = 'manual' if src in ('adzuna', 'remotive', 'himalayas', 'indeed') else 'needs_you'
         assert apply.process({'source': src, 'apply_url': 'u'}, {}, [], True, Boom()) == (expected, 'LEAD')
 
 

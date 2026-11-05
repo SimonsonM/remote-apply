@@ -2,3 +2,4 @@
 kokoro
 soundfile
 knowledge-storm
+python-jobspy  # Indeed source (boards.json indeed)
