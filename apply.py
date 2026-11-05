@@ -2722,11 +2722,11 @@ def application_candidates(conn, min_fit):
         (SELECT 1 FROM blockers b JOIN attempts a ON a.id=b.attempt_id
          WHERE a.job_url=jobs.url AND b.status='open')))
         ORDER BY CASE WHEN source IN ('greenhouse','lever','ashby','workday','workable','smartrecruiters','icims') THEN 0 ELSE 1 END,
-                 CASE WHEN is_remote_listing(location) THEN 0 ELSE 1 END,   -- remote roles are the priority
                  coalesce(fit,0) + CASE WHEN coalesce(posted_at,'') >= date('now','-2 day') THEN 5
                                         WHEN coalesce(posted_at,'') >= date('now','-7 day') THEN 2
                                         WHEN coalesce(posted_at,'') != '' AND posted_at < date('now','-30 day') THEN -5 ELSE 0 END DESC,
-                 score DESC, found_at DESC""")   # fresh postings first: the first 48 hours get the most attention
+                 CASE WHEN is_remote_listing(location) THEN 0 ELSE 1 END,   -- remote only breaks ties
+                 score DESC, found_at DESC""")   # best skills match first (fresh postings nudged up)
     names = [col[0] for col in cursor.description]
     rows = cursor.fetchall()
     return [row for row in rows if eligible_job(dict(zip(names, row)), profile)]
