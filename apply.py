@@ -1311,7 +1311,7 @@ def past_employers(prof):
         return tuple(v[1] for v in jobs.values() if isinstance(v, (list, tuple)) and len(v) > 1 and v[1])
     except Exception:
         return ()
-EMPLOYER_HISTORY_Q = re.compile(r'\b(?:previously\s+(?:worked|been employed|consulted)|ever\s+(?:worked|been employed|consulted)|been employed\s+(?:at|by)|consulted\s+for\s+.*previously|former\s+.*employee|employee\s+of\s+.*(?:currently|previously)|worked\s+(?:at|for)\s+.*before)\b', re.I)
+EMPLOYER_HISTORY_Q = re.compile(r'\b(?:previously\s+(?:worked|been employed|consulted)|ever\s+(?:worked|been employed|consulted)|been employed\s+(?:at|by)|consulted\s+for\s+.*previously|former\s+.*employee|employee\s+of\s+.*(?:currently|previously)|worked\s+(?:at|for)\s+.*before|worked\s+(?:with|for)\s+us\s+(?:before|previously)|have\s+you\s+(?:ever\s+)?worked\s+(?:here|with\s+us))\b', re.I)
 
 
 

@@ -399,7 +399,7 @@ def grounding_problems(text, resume_text, never_claim=(), profile=None, job=None
             problems.append(('number', token))
     # Credentials: resume only, never the posting.
     for m in re.finditer(r'\b(?:I (?:am|hold|earned|obtained|have)(?: my| a| an)?\s+)?(?:the\s+)?((?:Certified\s+)?(?:[A-Z][\w+-]*\s+){1,4}(?:Certificate|Certification|License)|[A-Z][\w+-]*[ -]certified)\b', text):
-        credential = m.group(1).strip()
+        credential = re.sub(r'^(?:My|Our|The|This|That|A|An)\s+', '', m.group(1).strip())   # "My Scrum ... Certificate"
         valid_sfc = credential.casefold() == 'scrum fundamentals certificate' and 'scrum fundamentals certificate' in resume_only
         if credential.casefold() not in resume_only and not valid_sfc and not _NEGATION.search(text[max(0, m.start()-12):m.start()]):
             problems.append(('credential', credential))

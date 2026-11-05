@@ -1016,7 +1016,16 @@ def apply_job(page_or_ctx, job, prof, bank, submit=False):
                             break
                         page.wait_for_timeout(500)
                     if WOTC.search(_all_text(page)):
-                        missing += _wotc_opt_out(page, results, fields)
+                        wotc = _wotc_opt_out(page, results, fields)
+                        if wotc:
+                            # The questionnaire is optional and "will not affect your application": if the vendor
+                            # window closes or hides its opt-out, carry on with Save and Continue instead of stopping.
+                            try:
+                                page.bring_to_front()
+                            except Exception:
+                                pass
+                            _record(results, fields, 'wotc_opt_out', 'Work Opportunity Tax Credit questionnaire (optional)',
+                                    'click', 'filled', 'skipped (optional)', source='wotc_optional')
                 missing += _fill_page(page, job, prof, bank, results, fields, step)
                 if missing or any(r['status'] == 'failed' for r in results):
                     break
