@@ -132,7 +132,7 @@ def _load_env():
 def _make_lm(model):
     import dspy
     if model.startswith("ollama"):
-        return dspy.LM(model, max_tokens=500, temperature=0.4, api_base=OLLAMA + "/v1")
+        return dspy.LM(model, max_tokens=900, temperature=0.4, api_base=OLLAMA + "/v1", timeout=300)
     return dspy.LM(model, max_tokens=800)  # newer Claude models reject temperature
 
 

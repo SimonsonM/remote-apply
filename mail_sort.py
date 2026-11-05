@@ -108,7 +108,11 @@ def log_interviews(m, mailbox, hits):
                         (f"Interview invite by email: {subj[:120]}", url)).rowcount:
             print(f"INTERVIEW: {co} - {title}"); n += 1
             py = Path(__file__).with_name(".venv") / "bin" / "python"
-            if py.exists():   # company brief in the background (Claude + web search), saved under interviews/
+            try:
+                local_only = str(json.loads(Path(__file__).with_name("profile.json").read_text()).get("draft_model", "")).startswith("ollama")
+            except Exception:
+                local_only = True
+            if py.exists() and not local_only:   # company brief in the background (Claude + web search), saved under interviews/
                 subprocess.Popen([str(py), "-c", "import sys, sqlite3, interview; c=sqlite3.connect('applications.sqlite3'); c.row_factory=sqlite3.Row;"
                                   " interview.brief(dict(c.execute('SELECT * FROM jobs WHERE url=?', (sys.argv[1],)).fetchone()))", url],
                                  cwd=Path(__file__).parent, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)

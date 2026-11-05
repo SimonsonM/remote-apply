@@ -10,7 +10,10 @@ REPORTS = ROOT / "reports"
 def _lm(profile):
     import dspy, smart
     smart._load_env()
-    model = "anthropic/" + profile.get("extract_model", "claude-haiku-4-5-20251001") if smart._load_env() else "ollama_chat/qwen2.5:14b"
+    if str(profile.get("draft_model", "auto")).startswith("ollama"):
+        model = profile["draft_model"]   # local-only mode: no Anthropic API calls
+    else:
+        model = "anthropic/" + profile.get("extract_model", "claude-haiku-4-5-20251001") if smart._load_env() else "ollama_chat/qwen2.5:14b"
     return smart._make_lm(model)
 
 
