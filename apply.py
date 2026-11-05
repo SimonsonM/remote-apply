@@ -1408,7 +1408,26 @@ OPTION_CLAIMS = re.compile(r"visa|citizen|green card|permanent resident|\breside
 US_CITIZEN = False  # set from profile.json by prepare_profile; only a stated fact unlocks citizen options
 
 
+def _yes_no_sentence(answer, options):
+    """'Yes' / 'No' into options written as sentences ('Yes, I am authorized to work...'), when exactly one starts that way."""
+    a = answer.strip().lower()
+    if a not in ("yes", "no"):
+        return None
+    hits = [o for o in options if re.match(rf"\W*{a}\b", o.strip(), re.I)]
+    if len(hits) != 1:
+        return None
+    o = hits[0]
+    # never let a bare Yes/No adopt a sentence that claims more (a visa, a green card, a temporary status)
+    plain_authorized = US_CITIZEN and re.search(r"authori[sz]", o, re.I) and not re.search(
+        r"visa|temporar|green card|permanent resident|sponsor|\bead\b|\bopt\b|h-?1b|not\b", o, re.I)
+    return o if (not OPTION_CLAIMS.search(o) or plain_authorized) else None
+
+
 def pick_option(answer, options):
+    if "|" not in answer and options:
+        hit = _yes_no_sentence(answer, options)
+        if hit and not any(o.strip().lower() == answer.strip().lower() for o in options):
+            return hit
     if "|" in answer:
         for alt in answer.split("|"):
             o = pick_option(alt, options)

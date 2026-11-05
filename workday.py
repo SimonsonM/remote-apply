@@ -23,7 +23,7 @@ STEPS = ('My Information', 'My Experience', 'Application Questions', 'Voluntary 
 
 def _tenant(job):
     host = urlparse(job.get('url') or job.get('apply_url', '')).hostname or ''
-    if not re.fullmatch(r'[a-z0-9-]+\.wd(?:1|3|5|12)\.myworkdayjobs\.com', host, re.I):
+    if not re.fullmatch(r'[a-z0-9-]+\.wd\d{1,3}\.myworkdayjobs\.com', host, re.I):   # wd1, wd5, wd12, wd501, ...
         raise ValueError('unrecognized Workday tenant host')
     return host.split('.')[0]
 
@@ -357,7 +357,7 @@ def _fill_page(page, job, prof, bank, results, fields, step=''):
             answer = _resolve(label, prof, bank, job)
             generic_terms = bool(re.search(r'privacy (notice|policy)|terms (of use|& conditions|and conditions)|candidate account|read and (understand|acknowledge)', label, re.I))
             if answer == '__agree__' or generic_terms:
-                el.check()
+                _tick(page, el)   # Workday checkboxes ignore el.check(); click the label first
                 _record(results, fields, key, label, 'checkbox', 'filled' if el.is_checked() else 'failed', 'checked', source='approved' if answer else 'generic_terms')
             elif el.get_attribute('required', timeout=3000) is not None or el.get_attribute('aria-required', timeout=3000) == 'true' or label.rstrip().endswith('*'):
                 missing.append(label)
@@ -462,7 +462,7 @@ def _fill_page(page, job, prof, bank, results, fields, step=''):
             missing.append(label)
             continue
         selected = radios[options.index(choice)]
-        selected.check()
+        _tick(page, selected)
         _record(results, fields, name, label, 'radio', 'filled', choice,
                 source='demographics' if answer == '__decline__' else 'approved')
     return missing
@@ -542,7 +542,7 @@ def pending_verification_links(keys, tenants, hours=24, imap_factory=imaplib.IMA
                     continue
                 link = _verify_message(email.message_from_bytes(raw, policy=email.policy.default), since)
                 host = urlparse(link or '').hostname or ''
-                tenant = host.split('.')[0].lower() if re.fullmatch(r'[a-z0-9-]+\.wd(?:1|3|5|12)\.myworkdayjobs\.com', host, re.I) else ''
+                tenant = host.split('.')[0].lower() if re.fullmatch(r'[a-z0-9-]+\.wd\d{1,3}\.myworkdayjobs\.com', host, re.I) else ''
                 if tenant in tenants and '/activate/' in (link or ''):
                     found[tenant] = link  # newest wins: SEARCH returns ascending order
     finally:
