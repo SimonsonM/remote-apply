@@ -129,11 +129,29 @@ def _load_env():
     return os.environ.get("ANTHROPIC_API_KEY")
 
 
-def _make_lm(model):
+LOCAL_MODEL = "ollama_chat/qwen2.5:14b"
+
+
+def _make_lm(model, local=None):
     import dspy
     if model.startswith("ollama"):
         return dspy.LM(model, max_tokens=900, temperature=0.4, api_base=OLLAMA + "/v1", timeout=300)
-    return dspy.LM(model, max_tokens=800)  # newer Claude models reject temperature
+
+    class FallbackLM(dspy.LM):
+        """Claude first; on any API failure (no credit, auth, rate limit, outage) switch this run to the local
+        model on Ollama so the program keeps working without the Anthropic API."""
+        def __call__(self, *args, **kwargs):
+            global _lm
+            try:
+                return super().__call__(*args, **kwargs)
+            except Exception as exc:
+                fallback = _make_lm(local or LOCAL_MODEL)
+                dspy.configure(lm=fallback)
+                _lm = fallback
+                print(f"Claude unavailable ({str(exc).splitlines()[0][:120]}); using {local or LOCAL_MODEL} for the rest of this run", flush=True)
+                return fallback(*args, **kwargs)
+
+    return FallbackLM(model, max_tokens=800)  # newer Claude models reject temperature
 
 
 def _setup(profile, force_local=False):
@@ -142,10 +160,10 @@ def _setup(profile, force_local=False):
         import dspy
         model = profile.get("draft_model", "auto")
         if force_local:
-            model = "ollama_chat/qwen2.5:14b"
+            model = profile.get("local_model", LOCAL_MODEL)
         elif model == "auto":
-            model = "anthropic/" + profile.get("claude_model", "claude-sonnet-5-5") if _load_env() else "ollama_chat/qwen2.5:14b"
-        _lm = _make_lm(model)
+            model = "anthropic/" + profile.get("claude_model", "claude-sonnet-5-5") if _load_env() else profile.get("local_model", LOCAL_MODEL)
+        _lm = _make_lm(model, profile.get("local_model", LOCAL_MODEL))
         dspy.configure(lm=_lm)
 
 
