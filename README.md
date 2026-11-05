@@ -10,13 +10,15 @@ It never invents qualifications or screening answers, and it never counts an app
 
 ## What it does
 
-- **Finds jobs** on Greenhouse, Lever, Ashby, Workday, Workable, SmartRecruiters and iCIMS boards, plus Adzuna, USAJobs, and Microsoft Eightfold.
+- **Finds jobs** on Greenhouse, Lever, Ashby, Workday, Workable, SmartRecruiters and iCIMS boards, plus Adzuna, USAJobs, Remotive, Himalayas, Indeed, Google Jobs (SerpApi), Microsoft Eightfold and staffing agencies (Robert Half, Michael Page, Adecco). Employer career-site links found on aggregators are applied to with a generic form filler.
 - **Ranks them** by semantic fit: 60% job title against your target roles, 40% description against your resume (local embeddings via Ollama).
 - **Fills applications** with Playwright, using only answers you have reviewed and approved. Free-text questions get drafts grounded only in your resume.
 - **Flags fake or stale postings** using WARN Act layoffs, PERM labor-certification ads, posting age and reposts, and closes postings the board has removed.
 - **Plans each night** with an optimizer that picks the best jobs for your time budget, and learns your taste from what you apply to or skip.
 - **Tracks everything** in SQLite: attempts, field-level results, blockers, confirmations, employer responses and follow-ups.
-- **Shows it all** on a local dashboard, with a "needs you" queue for anything only a person can finish.
+- **Shows it all** on a local dashboard: outcomes and response rates, market insights, outreach drafts, a recruitment-scam monitor, and a "needs you" queue for anything only a person can finish.
+- **Works without a paid API**: drafting uses Claude when funded and falls back to a local Ollama model.
+- **Filters** by region, pay (with a lower floor for short commutes), seniority, scam-prone listings and roles that require moving abroad without paid relocation.
 
 ## Requirements
 
@@ -24,7 +26,9 @@ It never invents qualifications or screening answers, and it never counts an app
 - Python 3.12
 - [Ollama](https://ollama.com) with `nomic-embed-text` and `qwen2.5:14b`
 - Optional: an IMAP mailbox (such as Proton Mail Bridge) for security codes and confirmation emails
-- Optional: free API keys for Adzuna and USAJobs
+- Python packages: `requirements.txt` (pinned); optional extras in `requirements-optional.txt`
+- Optional: an Anthropic API key (drafting falls back to Ollama without it)
+- Optional: free API keys for Adzuna, USAJobs and SerpApi (Google Jobs)
 
 ## Quick start
 
@@ -45,7 +49,7 @@ Then make it yours:
    Run `./ra links --dry` to inspect employer ATS matches for manual Adzuna leads; `--limit N` and `--budget SECONDS` constrain a run.
 3. **Role filters**: the defaults target program, project, operations and AI roles. Set `title_filter` (a regex) and `exclude_titles` (a list) in `profile.json` for your field.
 4. **Timezone**: set `"timezone"` in `profile.json` to `any` (default), `eastern`, `central`, `mountain`, `arizona`, `pacific`, `alaska` or `hawaii` (EST, CST, MST, PST and similar also work). Remote jobs limited to other timezones are skipped; `any` keeps them all.
-5. **API keys**: put Adzuna, USAJobs and mail credentials in `.env`, never in the profile.
+5. **API keys**: put Adzuna, USAJobs, SerpApi, Anthropic and mail credentials in `.env` or `~/.config/remote_apply/keys.env`, never in the profile.
 
 `./install.sh --check` runs a health check at any time.
 
@@ -56,6 +60,7 @@ Then make it yours:
 | `./ra` | Interactive menu |
 | `./ra setup` | Change your profile and standard answers |
 | `./ra dashboard` | Local dashboard at http://127.0.0.1:8675 |
+| `./ra nightly` | Run the full nightly cycle now |
 | `./ra schedule on\|off\|status` | Turn the nightly 3 AM run on or off |
 | `./ra stale [--apply]` | Find (and close) postings the boards have removed |
 | `python apply.py apply URL` | Prefill one application in a visible browser |
@@ -75,7 +80,7 @@ Set `"mode"` in `profile.json`:
 - **`prepare`**: fills headlessly and lets you finish later with `apply.py review`.
 - **`submit`**: submits on its own, within a standing authorization you define and a daily cap.
 
-Drafted answers and cover letters always need your review unless you explicitly allow them. Sensitive categories (EEO, consent, attestations, salary) need explicit approval. Anything that would waive your rights, such as arbitration agreements or non-competes, is always sent to you instead of being answered.
+Drafted answers and cover letters always need your review unless you explicitly allow them. Cover letters are written only when a form requires one (`cover_letters`). Sensitive categories (EEO, consent, attestations, salary) need explicit approval. Anything that would waive your rights, such as arbitration agreements or non-competes, is always sent to you instead of being answered.
 
 ## How ranking works
 

@@ -1,53 +1,77 @@
-# Remote Apply: quick user guide
+# Remote Apply: user guide
 
-Remote Apply finds selected employers' remote job postings, ranks them against your resume, and helps prepare applications. Run commands from this folder. Review each employer's posting and every filled answer before submitting.
+Remote Apply finds job postings, ranks them against your resume, fills and (if you allow it) submits applications, and tracks every one. Run commands from this folder.
 
-## Get ready
+## Install
 
-1. Use the existing `.venv` in this folder, or create one and install the Python packages used by the features you plan to run. Browser actions require Playwright and its Chromium browser (`python -m playwright install chromium`). Scanning and ranking also use MarkItDown, sqlite-vec, and a local Ollama service with `nomic-embed-text` available. Staging uses OR-Tools. Drafting uses DSPy and a configured model. This repository has no pinned dependency file.
-2. Check `profile.json`: set your name, email, phone, and `resume` path. The resume path must point to a real file. `profile.example.json` shows the basic fields, but the existing `profile.json` has more options. Check `answers.json` for reusable screening answers; enter only true answers you are comfortable reusing. Keep credentials out of these files.
-3. Edit `boards.json` to choose Greenhouse, Lever, and Ashby employer boards. The list is selective, not a complete job feed.
+```bash
+./install.sh              # creates .venv, installs requirements.txt and Playwright's Chromium
+./install.sh --check      # health check at any time
+```
 
-If starting from the example profile, copy it to `profile.json` and supply a resume file yourself. The example names `resume.docx`, which is not included in this folder. An existing `.venv` or Ollama installation may already be configured on this machine.
+- **Required packages** are pinned in `requirements.txt`. Optional extras (voice mock interviews, STORM research briefs, the Indeed source) are in `requirements-optional.txt`: `.venv/bin/pip install -r requirements-optional.txt`.
+- **Ollama** must be running with `nomic-embed-text` (ranking) and `qwen2.5:14b` (local drafting).
+- **Keys** go in `~/.config/remote_apply/keys.env` or `.env`, never in `profile.json`: `ANTHROPIC_API_KEY` (optional, see Drafting), `ADZUNA_APP_ID`/`ADZUNA_APP_KEY`, `USAJOBS_API_KEY`/`USAJOBS_EMAIL`, `SERPAPI_KEY` (Google Jobs), and `BRIDGE_USER`/`BRIDGE_PASS` for an IMAP mailbox such as Proton Mail Bridge.
+
+## Set up
+
+1. `./ra` the first time walks you through importing your resume, approving each extracted fact, and answering standard questions.
+2. Copy `profile.example.json` to `profile.json` and fill it in. The settings people change most:
+
+| Setting | What it does |
+|---|---|
+| `mode` | `stage` (you submit), `prepare`, or `submit` (submits on its own within `daily_cap`) |
+| `min_fit`, `remote_min_fit` | Match-score floors for local and remote roles |
+| `min_salary`, `local_min_salary`, `short_commute_miles` | Pay floor; a lower floor for on-site roles within a short commute |
+| `remote_regions` | e.g. `["us","ca","eu","uk"]`; empty = US only (`remote_anywhere: true` = any country) |
+| `scam_regions` | Remote listings tied to these places are dropped (defaults cover known scam-centre regions) |
+| `cover_letters` | `required` (default: only when the form requires one), `always`, or `false` |
+| `draft_model`, `claude_model`, `local_model` | Drafting model; see below |
+| `company_per_night`, `company_per_window` | Per-company application caps |
+| `agency_daily_cap` | Top matches worked per staffing agency per day (default 2) |
+| `captcha_circuit_breaker` | Stop trying a system for the night after this many CAPTCHAs in a row (default 5) |
+| `timezone` | `any` or a US zone; remote jobs limited to other zones are skipped |
+
+3. Copy `boards.example.json` to `boards.json` and choose sources: company boards (Greenhouse, Lever, Ashby, Workday, Workable, SmartRecruiters, iCIMS), plus Adzuna, USAJobs, Remotive, Himalayas, Indeed, Google Jobs and staffing agencies (Robert Half, Michael Page, Adecco).
+
+## Drafting (with or without the Anthropic API)
+
+Written answers and cover letters are drafted from your resume only and checked against it before use; anything the check cannot ground goes to you. With `draft_model: "auto"` the program uses Claude (`claude_model`) when an API key with credit is present and switches to the local model on Ollama for the rest of the run if the API fails. Set `draft_model` to an `ollama_chat/...` model to never call the API.
+
+## Nightly run
+
+`./ra schedule on` installs a 3 AM cron job (`./ra nightly`): it closes removed postings, discovers jobs, applies in order of match (fresh postings nudged up), then writes outreach drafts. Only committed code runs from the `ra_run` worktree. The hourly mail sort (`mail_sort.py`) files job email, records confirmations, rejections, interview invitations and employer application limits, trashes old Greenhouse security-code emails and runs the scam monitor.
+
+What the program never does on its own: agree to arbitration or other waivers of your rights, make statements about your own AI use, claim work authorization it has no record of, solve CAPTCHAs, or send messages.
 
 ## Dashboard
 
-Run `./ra dashboard` and open <http://127.0.0.1:8675>. The dashboard reads the current database and shows totals, recent recorded applications, and a searchable list of jobs waiting for your action. Use the status filters to focus on forms ready to submit, CAPTCHAs, other blockers, submissions to verify, or manual applications. Expand **Show application note** for the recorded reason. The page starts in dark mode; the light-mode switch remembers your choice. Refresh to see new database changes, and press Ctrl+C to stop the local server.
+`./ra dashboard`, then open <http://127.0.0.1:8675>. Pages:
 
-## Find and review jobs
+- **Overview**: key numbers, outcomes (total applied, rejected, response rate, interviews, awaiting reply), application activity and the pipeline.
+- **Action queue**: everything that needs you (forms ready to submit, CAPTCHAs, unanswered questions, submissions to verify, manual leads), with links.
+- **Market insights**: the funnel, response rates by role, seniority, application system, match score, remote vs local and resume version, days to rejection and from posting to applying, and phrases postings use that your resume never does.
+- **Outreach**: draft notes to recruiters and hiring managers for strong recent applications, and follow-ups for quiet ones. Nothing is sent: copy, send it yourself, mark it sent or skipped.
+- **Threats**: the recruitment-scam monitor. Each job-related email is checked for sender authentication (SPF, DKIM, DMARC), its sending IP and network, look-alike or newly registered domains and scam language. High-risk mail moves to `Folders/Suspected Scams`.
 
-```bash
-.venv/bin/python apply.py scan
-.venv/bin/python apply.py report
-xdg-open jobs.html
-```
+## Commands
 
-`scan` fetches public board listings and updates `applications.sqlite3`. It needs network access, the local embedding service, and the configured resume. `report` writes `jobs.html`, a shortlist you can open in a browser. Check location eligibility, pay, travel, and whether each listing is still open on the employer site. Fit and ghost scores are estimates.
+| Command | What it does |
+|---|---|
+| `./ra` | Interactive menu |
+| `./ra nightly` | Everything the nightly run does, now |
+| `./ra stale [--apply]` | Find (and close) postings the boards have removed |
+| `./ra tracks init\|list\|add\|edit` | Career-track resume versions |
+| `apply.py scan` / `apply.py run [--dry]` | Discover and rank / apply (`--dry` never submits) |
+| `apply.py apply URL` | Prefill one application in a visible browser |
+| `apply.py mark URL applied\|interview\|rejected\|offer\|skip` | Record an outcome yourself |
+| `apply.py doctor URL` | Inspect a form without filling it |
+| `apply.py answers ...` | Review and approve stored answers |
+| `apply.py followups` / `followup-draft URL` / `recruiter-email URL` | Follow-up and outreach drafts |
+| `apply.py interview URL [--no-voice]` | Company brief and mock interview (needs the API key) |
+| `outreach.py` | Write tonight's outreach drafts |
+| `threat_scan.py [--days N]` | Run the scam monitor over recent mail |
+| `mail_sort.py [--dry] [--reject-backfill DAYS]` | File job mail now |
+| `apply.py export` / `browse` | Rewrite `applications.csv` / open the Datasette tracker |
 
-## Prepare applications
-
-```bash
-.venv/bin/python apply.py run
-```
-
-With `mode` set to `stage` (the default), `run` scans, chooses jobs within your time budget, and opens prepared forms in a visible browser. The first tab is a checklist; later tabs contain forms. Ashby jobs normally open in your own Chrome with answers on the checklist for you to paste. Read drafted answers and cover letters, complete unanswered fields, solve any CAPTCHA, and submit yourself. The program marks a browser submission as applied only if it sees a confirmation. For an Ashby or other manually completed application, mark it yourself after you have confirmed submission:
-
-```bash
-.venv/bin/python apply.py mark 'JOB_URL' applied
-```
-
-`run --dry` scans and checks forms in a headless browser without submitting. It uses the nonstaging path and updates job statuses, so it is a dry submission run, not a read-only preview. If `mode` is changed away from `stage`, `run` uses this headless path; `auto_submit: true` permits it to click submit. Review those settings before running.
-
-To prefill one URL in a visible browser, use `.venv/bin/python apply.py apply 'APPLICATION_URL'`. Finish the form manually, then mark the tracked job URL as applied after confirmation. The `apply` command does not have a `--submit` option.
-
-## Track and explore
-
-```bash
-.venv/bin/python apply.py export
-.venv/bin/python apply.py browse
-.venv/bin/python apply.py mark 'JOB_URL' interview
-```
-
-`export` rewrites `applications.csv` from the SQLite database. `browse` opens the Datasette tracker. `mark` accepts `applied`, `interview`, `rejected`, `offer`, `skip`, `needs_you`, or `new`; use a URL from the tracker. The CSV is an output file, so make status changes with `mark` rather than editing it. `run.log` records activity, and `proof/` holds staged checklists and any captured screenshots.
-
-Optional commands: `signals` refreshes and summarizes WARN/PERM and posting-risk data; `skills` writes a skill-gap report under `reports/`; `interview 'JOB_URL' --no-voice` creates a company brief and runs a text mock interview for a tracked job. Interview prep requires an Anthropic API key; omit `--no-voice` only when the separate voice environment is set up. `--storm` uses the separate experimental STORM environment when installed.
+`run.log` records activity; `proof/` holds screenshots of each submission attempt.
