@@ -88,5 +88,7 @@
   "past_employers": [],
   "remote_anywhere": false,
   "scam_regions": [],
-  "remote_regions": []
+  "remote_regions": [],
+  "local_min_salary": null,
+  "short_commute_miles": 40
 }

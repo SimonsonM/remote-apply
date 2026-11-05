@@ -796,7 +796,7 @@ def eligible_job(job, profile):
     salary_max = posted_salary_max(job['salary'])
     title = job['title'] or ''
     return ((job['fit'] or 0) >= fit_floor(job['location'], profile)
-            and (salary_max is None or salary_max >= profile.get('min_salary', 0))
+            and (salary_max is None or salary_max >= pay_floor(job.get('location', ''), profile))
             and not NON_ENGLISH_TITLE.search(title)
             and not any(term in title.lower() for term in BAD_TITLE)
             and role_ok(title) and not overlevel_title(title))
@@ -840,6 +840,16 @@ def miles_from_home(loc):
                                                math.cos(math.radians(la)) * math.sin(math.radians(lo - HOME[1]) / 2) ** 2))
             best = d if best is None else min(best, d)
     return best
+
+
+def pay_floor(location, profile):
+    """Lowest posted pay worth applying to. A short commute earns a lower floor
+    (profile 'local_min_salary' within 'short_commute_miles', default 40) than remote or long-commute roles."""
+    floor = profile.get("min_salary", 0)
+    if profile.get("local_min_salary") is not None and not REMOTE.search(location or "") \
+            and local_ok(location, profile.get("short_commute_miles", 40)):
+        return min(floor, profile["local_min_salary"])
+    return floor
 
 
 def local_ok(loc, radius=40):
@@ -1077,17 +1087,18 @@ def scan():
         remote_floor = profile.get('remote_min_fit', floor)
         min_salary = profile.get('min_salary', 0)
         conn.create_function('is_remote_listing', 1, lambda location: int(remote_listing(location)))
+        conn.create_function('pay_floor', 1, lambda location: pay_floor(location, profile))
         floor_sql = "CASE WHEN is_remote_listing(location) THEN ? ELSE ? END"
         conn.execute("UPDATE jobs SET status='low_fit' WHERE status='new' AND fit < " + floor_sql, (remote_floor, floor))
         # Leads (Adzuna, Remotive, Himalayas) skip the browser, but still have to clear the fit floor to reach the manual list.
         conn.execute("UPDATE jobs SET status='low_fit' WHERE status='manual' AND source IN ('adzuna','remotive','himalayas') AND fit < " + floor_sql, (remote_floor, floor))
-        conn.execute("UPDATE jobs SET status='new', notes='' WHERE status='low_fit' AND notes != 'overlevel' AND fit >= " + floor_sql + " AND (salary_max(salary) IS NULL OR salary_max(salary) >= ?)", (remote_floor, floor, min_salary))
+        conn.execute("UPDATE jobs SET status='new', notes='' WHERE status='low_fit' AND notes != 'overlevel' AND fit >= " + floor_sql + " AND (salary_max(salary) IS NULL OR salary_max(salary) >= pay_floor(location))", (remote_floor, floor))
         ai_floor = profile.get("ai_min_fit", floor - 6)
-        for url, title in conn.execute("SELECT url, title FROM jobs WHERE status='low_fit' AND fit >= ? AND notes != 'pay below floor' AND (salary_max(salary) IS NULL OR salary_max(salary) >= ?)", (ai_floor, min_salary)).fetchall():
+        for url, title in conn.execute("SELECT url, title FROM jobs WHERE status='low_fit' AND fit >= ? AND notes != 'pay below floor' AND (salary_max(salary) IS NULL OR salary_max(salary) >= pay_floor(location))", (ai_floor,)).fetchall():
             if AI_ROLE.search(title or "") and AI_ROLE_KIND.search(title or "") and role_ok(title) \
                     and not any(t in (title or "").lower() for t in BAD_TITLE):
                 conn.execute("UPDATE jobs SET status='new' WHERE url=?", (url,))
-        conn.execute("UPDATE jobs SET status='low_fit', notes='pay below floor' WHERE status IN ('new','ready','manual') AND salary_max(salary) < ?", (min_salary,))
+        conn.execute("UPDATE jobs SET status='low_fit', notes='pay below floor' WHERE status IN ('new','ready','manual') AND salary_max(salary) < pay_floor(location)")
         for url, title in conn.execute("SELECT url,title FROM jobs WHERE status IN ('new','ready')").fetchall():
             if NON_ENGLISH_TITLE.search(title or ''):
                 conn.execute("UPDATE jobs SET status='low_fit', notes='language requirement' WHERE url=?", (url,))
