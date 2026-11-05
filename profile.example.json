@@ -90,5 +90,6 @@
   "scam_regions": [],
   "remote_regions": [],
   "local_min_salary": null,
-  "short_commute_miles": 40
+  "short_commute_miles": 40,
+  "cover_letters": "required"
 }

@@ -2210,7 +2210,7 @@ def prepare_lead(job, prof):
     cover letter and hand the posting to the user as a lead."""
     note = f"LEAD ({job['source']}, apply yourself): {job['apply_url']}"
     # API cost: leads are applied to by hand and most never are, so only strong ones get a letter up front.
-    if prof.get('cover_letters', True) and (job.get('fit') or 0) >= prof.get('lead_cover_letter_min_fit', 70):
+    if prof.get('cover_letters', 'required') in (True, 'always') and (job.get('fit') or 0) >= prof.get('lead_cover_letter_min_fit', 70):
         try:
             import smart
             letter, path = smart.cover_letter(prof, job)
@@ -2344,18 +2344,30 @@ COVER_JS = r"""() => { const out = [];
     if (e.id) { const l = document.querySelector('label[for="' + CSS.escape(e.id) + '"]'); if (l) lab = l.innerText; }
     if (!lab) { const c = e.closest('.application-question, fieldset, [class*="fieldEntry"], [class*="field"]'); if (c) lab = (c.innerText || '').slice(0, 150); }
     const ctx = (lab + ' ' + nid).toLowerCase();
-    if (/cover.?letter|additional information/.test(ctx)) { e.setAttribute('data-cl', String(out.length)); out.push(e.type === 'file' ? 'file' : 'text'); }
+    if (/cover.?letter|additional information/.test(ctx)) {
+      const req = e.required || e.getAttribute('aria-required') === 'true' || /\*/.test(lab);
+      e.setAttribute('data-cl', String(out.length)); e.setAttribute('data-cl-req', req ? '1' : '0');
+      out.push(e.type === 'file' ? 'file' : 'text'); }
   }
   return out; }"""
 
 
+def want_cover_letter(page, prof):
+    """profile "cover_letters": "required" (default) writes one only when the form makes the field required;
+    true / "always" writes one for any cover-letter field; false never does. Optional letters are rarely read."""
+    mode = prof.get("cover_letters", "required")
+    if mode is False or mode == "never" or not page.evaluate(COVER_JS):
+        return False
+    if mode == "required":
+        return page.locator("[data-cl-req='1']").count() > 0
+    return True
+
+
 def attach_cover(page, prof, job):
     """If the form has a cover-letter slot, write a tailored letter and attach/paste it. Returns note or ''."""
-    if not prof.get("cover_letters", True):
+    if not want_cover_letter(page, prof):
         return ""
     slots = page.evaluate(COVER_JS)
-    if not slots:
-        return ""
     import smart
     text, path = smart.cover_letter(prof, job)
     if "file" in slots:
@@ -2475,7 +2487,7 @@ def prepare_fields(page, job, prof, bank, fields=None, manual=False):
                 results.append(dict(key=key, kind=kind, status='failed', error=str(e)[:300] if 'draft_rejected' in str(e) else 'draft failed', value='', source='draft'))
                 if label in missing:
                     missing.remove(label)
-    if prof.get('cover_letters', True) and page.evaluate(COVER_JS):
+    if want_cover_letter(page, prof):
         try:
             letter, path = smart.cover_letter(prof, job)
             body = letter.split('\n\n', 1)[-1].rsplit('\n\n', 1)[0]
