@@ -45,9 +45,7 @@ def to_job(row, remote_search=False):
                description=str(row.get("description") or ""), url=url, apply_url=direct or url, source="indeed",
                token="", job_id=str(row.get("id") or ""), salary=salary_text(row),
                posted_at=str(row.get("date_posted") or "")[:10])
-    if direct and apply.ats_source(direct):
-        job = apply.promote_remote_board(job)   # employer's own Greenhouse/Lever/Workday posting: use that queue
-    return job
+    return apply.promote_employer_site(job)   # employer's own page: ATS queue or generic auto-apply
 
 
 def fetch(cfg, log=print):

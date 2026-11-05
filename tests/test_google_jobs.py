@@ -17,5 +17,5 @@ def test_lead_and_remote():
             "apply_options": [{"title": "Indeed", "link": "https://www.indeed.com/viewjob?jk=1"},
                               {"title": "B careers", "link": "https://careers.b.com/jobs/9"}]}
     job = google_jobs.to_job(item)
-    assert job["source"] == "google" and job["apply_url"] == "https://careers.b.com/jobs/9"
+    assert job["source"] == "employer" and job["apply_url"] == "https://careers.b.com/jobs/9"
     assert job["location"] == "Remote - United States"

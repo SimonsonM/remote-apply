@@ -75,7 +75,7 @@ def apply_job(page, job, prof, bank, dry=False):
         try:
             page.goto(job['apply_url'], wait_until='domcontentloaded', timeout=45000)
             try:
-                page.wait_for_selector('form input, form textarea, form select, iframe[title*="captcha" i]', timeout=20000)
+                page.wait_for_selector('form input, form textarea, form select', timeout=20000)
             except Exception:
                 pass
             for step in range(8):
@@ -83,13 +83,20 @@ def apply_job(page, job, prof, bank, dry=False):
                 if challenge_present(page):
                     missing.append('CAPTCHA challenge visible')
                     break
-                if _visible(page.locator('iframe[title*="captcha" i], iframe[src*="/bframe"], .h-captcha iframe[title*="checkbox" i]')):
+                # a real challenge: reCAPTCHA checkbox (size=normal) or puzzle frame, hCaptcha checkbox; the invisible
+                # reCAPTCHA badge (size=invisible) that most career sites carry is not one
+                if _visible(page.locator('iframe[src*="recaptcha"][src*="size=normal"], iframe[src*="/bframe"], '
+                                         '.h-captcha iframe[title*="checkbox" i], iframe[src*="hcaptcha"][title*="challenge" i]')):
                     missing.append('CAPTCHA challenge visible')
                     break
                 if not page.locator('form').count():
-                    start = page.get_by_role('button', name=re.compile(r'^(?:apply|apply now|start application|i.m interested)$', re.I))
+                    start_name = re.compile(r'^\s*(?:apply|apply now|apply for this (?:job|position)|apply online|start (?:your )?application|i.m interested)\s*$', re.I)
+                    start = page.get_by_role('button', name=start_name)
+                    if not _visible(start):
+                        start = page.get_by_role('link', name=start_name)   # most career sites use a link, not a button
                     if _visible(start):
                         start.first.click()
+                        page.wait_for_timeout(1500)
                         continue
                     missing.append('Application form unavailable')
                     break

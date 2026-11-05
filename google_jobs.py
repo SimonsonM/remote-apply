@@ -57,9 +57,7 @@ def to_job(item, remote=False):
                description=item.get("description") or "", url=link or item.get("share_link") or "", apply_url=link,
                source="google", token="", job_id=str(item.get("job_id") or "")[:120], salary=ext.get("salary") or "",
                posted_at=_posted(ext.get("posted_at")))
-    if link and apply.ats_source(link):
-        job = apply.promote_remote_board(job)
-    return job
+    return apply.promote_employer_site(job)   # employer's own page: ATS queue or generic auto-apply
 
 
 def _posted(text):

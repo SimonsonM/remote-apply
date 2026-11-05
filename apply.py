@@ -330,6 +330,36 @@ def promote_adzuna(job):
     return job
 
 
+AGGREGATOR = re.compile(r"(indeed|linkedin|ziprecruiter|glassdoor|monster|simplyhired|talent\.com|jooble|adzuna|careerbuilder|"
+                        r"dice\.com|snagajob|google\.com|lensa|jobright|builtin)\.", re.I)
+SHORTLINK = re.compile(r"^https?://(grnh\.se|lnkd\.in|bit\.ly|t\.co|tinyurl\.com|jobs\.lever\.co/r)/", re.I)
+
+
+def resolve_short(url):
+    """Follow a short link (grnh.se is Greenhouse's) to the real posting."""
+    if not SHORTLINK.match(url or ""):
+        return url
+    try:
+        req = urllib.request.Request(url, method="HEAD", headers=UA)
+        with urllib.request.urlopen(req, timeout=15) as r:
+            return r.geturl()
+    except Exception:
+        return url
+
+
+def promote_employer_site(job):
+    """A lead whose link is the employer's own application page: ATS queue if we know the system,
+    else source 'employer' so the generic form filler applies to it instead of leaving it to the user."""
+    url = resolve_short(job.get('apply_url') or '')
+    if not url.startswith('http') or AGGREGATOR.search(urlparse(url).hostname or ''):
+        return job
+    if ats_source(url):
+        job['apply_url'] = url
+        return promote_remote_board(job)
+    job.update(apply_url=url, source='employer')
+    return job
+
+
 def promote_remote_board(job):
     """A direct supported ATS link can use the existing ATS queue and dedupe."""
     url = job.get('apply_url') or ''
@@ -963,7 +993,7 @@ def requires_relocation_abroad(job):
 # profile.json "scam_regions" replaces this list.
 SCAM_REGIONS = ("cambodia", "phnom penh", "sihanoukville", "myanmar", "burma", "yangon", "myawaddy", "shwe kokko",
                 "laos", "vientiane", "golden triangle", "bokeo")
-UNVERIFIED_SOURCES = ("adzuna", "himalayas", "remotive", "indeed", "google")      # aggregators: no employer-run application system behind them
+UNVERIFIED_SOURCES = ("adzuna", "himalayas", "remotive", "indeed", "google", "employer")      # aggregators: no employer-run application system behind them
 ANON_COMPANY = re.compile(r"^\s*(confidential|private|stealth|anonymous|undisclosed|hiring company|company|n/?a|unknown|)\s*$", re.I)
 
 
@@ -2217,6 +2247,9 @@ def process(job, prof, bank, submit, ctx, selector_timeout=25000, confirmation_t
         import workday
         # run() passes a BrowserContext; give apply_job a page so it returns (status, note)
         return workday.apply_job(ctx.new_page() if not hasattr(ctx, 'goto') else ctx, job, prof, bank, submit)
+    if job.get('source') == 'employer' and prof.get('employer_site_auto', True):
+        import ats_form   # generic multi-page form filler: start button, fields, next, submit
+        return ats_form.apply_job(ctx.new_page() if not hasattr(ctx, 'goto') else ctx, job, prof, bank, dry=not submit)
     if job.get('source') in AGENCY_SOURCES:
         import agencies
         return 'needs_you', f"{agencies.lead_note()} | {prepare_lead(job, prof)}"

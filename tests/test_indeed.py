@@ -17,3 +17,13 @@ def test_direct_ats_link_promoted():
                          "job_url": "https://www.indeed.com/viewjob?jk=3",
                          "job_url_direct": "https://job-boards.greenhouse.io/acme/jobs/12345"})
     assert job["source"] == "greenhouse"
+
+
+def test_employer_site_becomes_auto_apply():
+    job = indeed.to_job({"company": "Acme", "title": "PM", "location": "Madison, WI",
+                         "job_url": "https://www.indeed.com/viewjob?jk=4",
+                         "job_url_direct": "https://acme.bamboohr.com/careers/383"})
+    assert job["source"] == "employer"
+    only = indeed.to_job({"company": "Acme", "title": "PM", "location": "Madison, WI",
+                          "job_url": "https://www.indeed.com/viewjob?jk=5", "job_url_direct": None})
+    assert only["source"] == "indeed"
