@@ -2898,9 +2898,12 @@ def run(dry=False):
             conn.execute("UPDATE jobs SET status=?, notes=?, updated=CURRENT_TIMESTAMP WHERE url=?", (status, note, job["url"]))
             conn.commit()
             log(f"{status:12} {job['company']} - {job['title']} (agency pick, fit {round(job.get('fit') or 0)})")
+        captcha_streak = {}   # per source: a system that CAPTCHAs every submit tonight is not worth more attempts
         for job in candidates:
             if job["source"] in AGENCY_SOURCES:
                 continue  # agencies are capped per day above, not per company
+            if captcha_streak.get(job["source"], 0) >= prof.get("captcha_circuit_breaker", 5):
+                continue      # left 'new' for tomorrow; no drafting spent on a wall
             k = ckey(job["company"])
             if overlevel_title(job["title"]):
                 conn.execute("UPDATE jobs SET status='low_fit', notes='overlevel', updated=CURRENT_TIMESTAMP WHERE url=?", (job["url"],))
@@ -2936,6 +2939,9 @@ def run(dry=False):
                 log_application(job, status, note)
             if status in CLAIMED:
                 claimed[k] = job["url"]
+            captcha_streak[job["source"]] = captcha_streak.get(job["source"], 0) + 1 if status == "captcha" else 0
+            if captcha_streak.get(job["source"], 0) == prof.get("captcha_circuit_breaker", 5):
+                log(f"{'circuit':12} {job['source']}: {captcha_streak[job['source']]} CAPTCHAs in a row - skipping the rest of {job['source']} tonight")
             if status in ("applied", "unconfirmed"):
                 sent += 1
                 confirmed += status == "applied"
