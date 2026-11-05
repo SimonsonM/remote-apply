@@ -90,7 +90,10 @@ def fetch_roberthalf(cfg, keywords):
     for kw in keywords:
         for page in range(1, cfg.get("pages", 2) + 1):
             url = f"https://www.roberthalf.com/us/en/jobs/all/{_slug(kw)}" + (f"?pagenumber={page}" if page > 1 else "")
-            jobs = list(parse_roberthalf(_get(url)))
+            try:
+                jobs = list(parse_roberthalf(_get(url)))
+            except Exception:
+                break
             yield from jobs
             if len(jobs) < 25:
                 break
@@ -120,7 +123,10 @@ def fetch_michaelpage(cfg, keywords):
     for kw in keywords:
         for page in range(cfg.get("pages", 2)):
             url = f"https://www.michaelpage.com/jobs/{_slug(kw)}" + (f"?page={page}" if page else "")
-            jobs = list(parse_michaelpage(_get(url)))
+            try:
+                jobs = list(parse_michaelpage(_get(url)))
+            except Exception:
+                break   # no results page for this keyword (404): try the next one
             yield from jobs
             if len(jobs) < 20:
                 break

@@ -440,5 +440,6 @@
     "keywords": ["program manager", "project manager", "technical program manager", "implementation manager", "operations manager", "AI operations", "IT project manager", "marketing manager"],
     "pages": 2
   },
-  "indeed": {"enabled": false, "keywords": ["project manager", "program manager", "operations manager"], "location": "Your City, ST", "distance": 40, "remote": true, "hours_old": 72, "results": 30}
+  "indeed": {"enabled": false, "keywords": ["project manager", "program manager", "operations manager"], "location": "Your City, ST", "distance": 40, "remote": true, "hours_old": 72, "results": 30},
+  "google_jobs": {"enabled": false, "queries": ["project manager", "program manager"], "location": "Your City, State", "remote": true, "per_night": 8, "monthly_budget": 240}
 }

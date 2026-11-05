@@ -50,3 +50,4 @@ build/_generalize.py
 boards.json
 .dashboard_cache.json
 resume_facts.json.bak*
+.serpapi_usage.json

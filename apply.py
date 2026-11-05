@@ -231,7 +231,7 @@ def get_json_h(url):
 
 
 AGENCY_SOURCES = ("roberthalf", "michaelpage", "adecco")  # staffing agencies: top N per agency per day, see agencies.py
-LEAD_SOURCES = ("workday", "icims", "adzuna", "remotive", "himalayas", "usajobs", "indeed")  # Account sources are routed separately when enabled
+LEAD_SOURCES = ("workday", "icims", "adzuna", "remotive", "himalayas", "usajobs", "indeed", "google")  # Account sources are routed separately when enabled
 KEYS_FILE = Path.home() / ".config" / "remote_apply" / "keys.env"
 ADZUNA_CALLS = {"n": 0}
 
@@ -617,6 +617,9 @@ def fetch_jobs(boards):
             yield from fetch_usajobs(keys, {**boards.get("usajobs", {}), **(_PROFILE.get("usajobs") or {})})
         except Exception as e:
             log(f"fetch failed usajobs: {str(e)[:120]}")
+    if (boards.get("google_jobs") or {}).get("enabled") and keys.get("SERPAPI_KEY"):
+        import google_jobs
+        yield from google_jobs.fetch(boards["google_jobs"], keys, log)
     if (boards.get("indeed") or {}).get("enabled"):
         import indeed
         yield from indeed.fetch(boards["indeed"], log)
@@ -960,7 +963,7 @@ def requires_relocation_abroad(job):
 # profile.json "scam_regions" replaces this list.
 SCAM_REGIONS = ("cambodia", "phnom penh", "sihanoukville", "myanmar", "burma", "yangon", "myawaddy", "shwe kokko",
                 "laos", "vientiane", "golden triangle", "bokeo")
-UNVERIFIED_SOURCES = ("adzuna", "himalayas", "remotive", "indeed")      # aggregators: no employer-run application system behind them
+UNVERIFIED_SOURCES = ("adzuna", "himalayas", "remotive", "indeed", "google")      # aggregators: no employer-run application system behind them
 ANON_COMPANY = re.compile(r"^\s*(confidential|private|stealth|anonymous|undisclosed|hiring company|company|n/?a|unknown|)\s*$", re.I)
 
 
@@ -1063,7 +1066,7 @@ def scan():
                 continue
             if job['source'] in ATS_SOURCES and existing_ats_url(conn, job.get('apply_url') or job['url'], exclude=job['url']):
                 continue
-            status = 'manual' if job['source'] in ('adzuna', 'remotive', 'himalayas', 'indeed') else 'new'
+            status = 'manual' if job['source'] in ('adzuna', 'remotive', 'himalayas', 'indeed', 'google') else 'new'
             conn.execute("INSERT INTO jobs (url,company,title,location,description,score,source,hq,salary,token,job_id,apply_url,found_at,posted_at) "
                          "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,date('now','localtime'),?) ON CONFLICT(url) DO UPDATE SET description=excluded.description, "
                          "posted_at=CASE WHEN jobs.posted_at='' THEN excluded.posted_at ELSE jobs.posted_at END, "
@@ -1073,10 +1076,10 @@ def scan():
                          (job["url"], job["company"], job["title"], job["location"], job["description"], pts, job["source"],
                           hq, job["salary"], job["token"], job["job_id"], job["apply_url"], job.get("posted_at", "")))
             if job['source'] in ATS_SOURCES:
-                conn.execute("UPDATE jobs SET source=?, apply_url=?, status='new', notes='' WHERE url=? AND source IN ('adzuna','remotive','himalayas','indeed') AND status IN ('manual','needs_you','new')",
+                conn.execute("UPDATE jobs SET source=?, apply_url=?, status='new', notes='' WHERE url=? AND source IN ('adzuna','remotive','himalayas','indeed','google') AND status IN ('manual','needs_you','new')",
                              (job['source'], job['apply_url'], job['url']))
             if status == 'manual':
-                conn.execute("UPDATE jobs SET status='manual', notes=? WHERE url=? AND source IN ('adzuna','remotive','himalayas','indeed') AND status IN ('new','needs_you')",
+                conn.execute("UPDATE jobs SET status='manual', notes=? WHERE url=? AND source IN ('adzuna','remotive','himalayas','indeed','google') AND status IN ('new','needs_you')",
                              (f"{job['source'].title()} lead: apply yourself", job['url']))
             n += 1
         refresh_adzuna_jobs(conn)
@@ -1094,7 +1097,7 @@ def scan():
         floor_sql = "CASE WHEN is_remote_listing(location) THEN ? ELSE ? END"
         conn.execute("UPDATE jobs SET status='low_fit' WHERE status='new' AND fit < " + floor_sql, (remote_floor, floor))
         # Leads (Adzuna, Remotive, Himalayas) skip the browser, but still have to clear the fit floor to reach the manual list.
-        conn.execute("UPDATE jobs SET status='low_fit' WHERE status='manual' AND source IN ('adzuna','remotive','himalayas','indeed') AND fit < " + floor_sql, (remote_floor, floor))
+        conn.execute("UPDATE jobs SET status='low_fit' WHERE status='manual' AND source IN ('adzuna','remotive','himalayas','indeed','google') AND fit < " + floor_sql, (remote_floor, floor))
         conn.execute("UPDATE jobs SET status='new', notes='' WHERE status='low_fit' AND notes != 'overlevel' AND fit >= " + floor_sql + " AND (salary_max(salary) IS NULL OR salary_max(salary) >= pay_floor(location))", (remote_floor, floor))
         ai_floor = profile.get("ai_min_fit", floor - 6)
         for url, title in conn.execute("SELECT url, title FROM jobs WHERE status='low_fit' AND fit >= ? AND notes != 'pay below floor' AND (salary_max(salary) IS NULL OR salary_max(salary) >= pay_floor(location))", (ai_floor,)).fetchall():
@@ -2218,7 +2221,7 @@ def process(job, prof, bank, submit, ctx, selector_timeout=25000, confirmation_t
         import agencies
         return 'needs_you', f"{agencies.lead_note()} | {prepare_lead(job, prof)}"
     if job.get('source') in LEAD_SOURCES:
-        return ('manual' if job.get('source') in ('adzuna', 'remotive', 'himalayas', 'indeed') else 'needs_you'), prepare_lead(job, prof)
+        return ('manual' if job.get('source') in ('adzuna', 'remotive', 'himalayas', 'indeed', 'google') else 'needs_you'), prepare_lead(job, prof)
     with db() as conn:
         attempt = _new_attempt(conn, job, prof)
         page = None
@@ -2476,7 +2479,7 @@ def stage_job(job, prof, bank, ctx, selector_timeout=25000):
         return workday.apply_job(ctx, job, prof, bank, False)
     with db() as conn:
         if job['source'] in LEAD_SOURCES:
-            return None, 'manual' if job['source'] in ('adzuna', 'remotive', 'himalayas', 'indeed') else 'needs_you', prepare_lead(job, prof)
+            return None, 'manual' if job['source'] in ('adzuna', 'remotive', 'himalayas', 'indeed', 'google') else 'needs_you', prepare_lead(job, prof)
         manual_job = job['source'] in prof.get('manual_sources', ['ashby'])
         attempt = _new_attempt(conn, job, prof, 'manual' if manual_job else '')
         if manual_job:
